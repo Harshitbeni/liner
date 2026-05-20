@@ -1,0 +1,3 @@
+[submodule "vendor/craft-agents-oss"]
+	path = vendor/craft-agents-oss
+	url = https://github.com/craft-ai-agents/craft-agents-oss.git
