@@ -1,0 +1,23 @@
+#!/usr/bin/env bun
+/** Kill stale Liner dev processes on API/UI ports (macOS/Linux). */
+const ports = [
+  Number(process.env.LINER_API_PORT ?? 9240),
+  Number(process.env.LINER_UI_PORT ?? 5180),
+];
+
+for (const port of ports) {
+  const result = Bun.spawnSync(['lsof', '-ti', `:${port}`]);
+  const pids = new TextDecoder()
+    .decode(result.stdout)
+    .trim()
+    .split('\n')
+    .filter(Boolean);
+  for (const pid of pids) {
+    try {
+      process.kill(Number(pid), 'SIGTERM');
+      console.log(`[liner] freed port ${port} (pid ${pid})`);
+    } catch {
+      /* already gone */
+    }
+  }
+}

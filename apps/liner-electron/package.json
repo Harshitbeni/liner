@@ -1,0 +1,27 @@
+{
+  "name": "@liner/electron",
+  "version": "0.3.0",
+  "private": true,
+  "main": "dist/main.cjs",
+  "type": "module",
+  "scripts": {
+    "build:main": "esbuild src/main.ts --bundle --platform=node --format=cjs --outfile=dist/main.cjs --external:electron",
+    "build:preload": "esbuild src/preload.ts --bundle --platform=node --format=cjs --outfile=dist/preload.cjs --external:electron",
+    "build": "bun run build:main && bun run build:preload",
+    "dev": "bun run build && concurrently -n api,electron -c green,magenta \"cd ../liner-server && LINER_RPC_MODE=mock bun run dev\" \"wait-on http://127.0.0.1:9240/api/health && electron .\"",
+    "start": "bun run build && electron .",
+    "predist": "bun ../../scripts/bundle-liner-server.ts",
+    "dist": "bun run build && electron-builder --config electron-builder.json",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "wait-on": "^8.0.1"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0",
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.7.0"
+  }
+}

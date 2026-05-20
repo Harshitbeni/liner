@@ -1,0 +1,41 @@
+{
+  "appId": "do.liner.app",
+  "productName": "Liner",
+  "directories": {
+    "output": "release",
+    "buildResources": "build"
+  },
+  "files": ["dist/**/*"],
+  "extraResources": [
+    {
+      "from": "../liner/dist",
+      "to": "liner-ui",
+      "filter": ["**/*"]
+    },
+    {
+      "from": "build/liner-server",
+      "to": "liner-server",
+      "filter": ["**/*"]
+    },
+    {
+      "from": "build/craft-engine",
+      "to": "craft-engine",
+      "filter": ["**/*"]
+    },
+    {
+      "from": "build/runtime",
+      "to": "runtime",
+      "filter": ["**/*"]
+    }
+  ],
+  "mac": {
+    "category": "public.app-category.productivity",
+    "target": ["dmg", "dir"]
+  },
+  "linux": {
+    "target": ["AppImage", "dir"]
+  },
+  "win": {
+    "target": ["nsis", "dir"]
+  }
+}
