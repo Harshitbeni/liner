@@ -365,7 +365,7 @@ export function OutlineTree({
             key={point.id}
             role="treeitem"
             className={cn(
-              'outline-row group flex cursor-pointer items-stretch gap-1 rounded-sm py-1.5 pr-2 pl-2 text-13',
+              'outline-row group flex cursor-pointer items-stretch gap-1 rounded-sm pr-2 pl-2 text-13',
               isSelected && 'bg-accent text-foreground',
               !isSelected && 'text-foreground hover:bg-accent/50',
               dragOverId === point.id && 'bg-muted',
@@ -402,7 +402,7 @@ export function OutlineTree({
             {guides.map((show, level) => (
               <span
                 key={level}
-                className="relative flex w-5 shrink-0 items-center justify-center"
+                className="relative w-5 shrink-0 self-stretch"
                 aria-hidden
               >
                 {show ? <span className="outline-guide" /> : null}
@@ -410,7 +410,7 @@ export function OutlineTree({
             ))}
             <div
               className={cn(
-                'outline-row-content flex min-w-0 flex-1 items-center gap-1',
+                'outline-row-content flex min-w-0 flex-1 items-center gap-1 py-1.5',
                 selectedId && !inBranch && 'dimmed',
               )}
             >

@@ -171,6 +171,7 @@ body,
   inset-block: 0;
   left: 50%;
   width: 1px;
+  height: 100%;
   transform: translateX(-50%);
   background: var(--border);
 }
