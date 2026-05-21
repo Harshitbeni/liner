@@ -312,22 +312,14 @@ export function SettingsModal({
                     <tr>
                       <td>
                         <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-xs">
-                          P
-                        </kbd>
-                        ,{' '}
-                        <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-xs">
                           A
                         </kbd>
                         ,{' '}
                         <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-xs">
                           S
                         </kbd>
-                        ,{' '}
-                        <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-xs">
-                          X
-                        </kbd>
                       </td>
-                      <td>Promote, approve, ship, cancel</td>
+                      <td>Approve, ship</td>
                     </tr>
                   </tbody>
                 </table>

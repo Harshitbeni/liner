@@ -34,14 +34,6 @@ const STATES: PointState[] = [
   'cancelled',
 ];
 
-const PRIORITIES: Point['priority'][] = [
-  'none',
-  'low',
-  'medium',
-  'high',
-  'urgent',
-];
-
 type Props = {
   pointId: string;
   onUpdated: () => void;
@@ -169,17 +161,9 @@ export function PointDetail({
         return;
       }
       if (typing && !(e.metaKey || e.ctrlKey)) return;
-      if (e.key === 'p' && point.state === 'backlog') {
-        e.preventDefault();
-        void changeState('todo');
-      }
       if (e.key === 's' && point.state === 'done') {
         e.preventDefault();
         void changeState('shipped');
-      }
-      if (e.key === 'x' && point.state !== 'cancelled') {
-        e.preventDefault();
-        void changeState('cancelled');
       }
       if (e.key === 'a' && point.state === 'needs-review') {
         e.preventDefault();
@@ -329,40 +313,12 @@ export function PointDetail({
               ))}
             </SelectContent>
           </Select>
-          <Select
-            value={point.priority}
-            onValueChange={(v) =>
-              api
-                .updatePoint(pointId, { priority: v as Point['priority'] })
-                .then(load)
-            }
-          >
-            <SelectTrigger
-              size="sm"
-              className="h-7 w-full min-w-0 border-0 bg-transparent px-1 text-13 text-muted-foreground shadow-none focus:ring-0"
-            >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {PRIORITIES.map((p) => (
-                <SelectItem key={p} value={p} className="text-13 capitalize">
-                  {p}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
         </div>
+        {point.state === 'todo' ||
+        point.state === 'needs-review' ||
+        point.state === 'in-progress' ||
+        point.state === 'done' ? (
         <div className="mt-2 flex flex-wrap gap-1">
-          {point.state === 'backlog' ? (
-            <Button
-              type="button"
-              variant="ghost"
-              className="text-13 h-7 px-2"
-              onClick={() => changeState('todo')}
-            >
-              Promote
-            </Button>
-          ) : null}
           {point.state === 'todo' ? (
             <Button
               type="button"
@@ -403,17 +359,8 @@ export function PointDetail({
               Ship
             </Button>
           ) : null}
-          {point.state !== 'cancelled' ? (
-            <Button
-              type="button"
-              variant="ghost"
-              className="text-13 h-7 px-2 text-muted-foreground"
-              onClick={() => changeState('cancelled')}
-            >
-              Cancel
-            </Button>
-          ) : null}
         </div>
+        ) : null}
         <button
           type="button"
           className="mt-2 flex cursor-pointer items-center gap-1 text-12 text-muted-foreground hover:text-foreground"

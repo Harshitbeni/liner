@@ -76,12 +76,28 @@ export default function App() {
     saveLayoutSizes(sizes);
   }, []);
 
-  const resetPanelLayout = React.useCallback(() => {
-    const layout = [...DEFAULT_PANEL_LAYOUT];
-    panelGroupRef.current?.setLayout(layout);
-    setPanelLayout(layout);
-    saveLayoutSizes(layout);
-  }, []);
+  const resetAdjacentPanels = React.useCallback(
+    (leftIndex: number, rightIndex: number) => {
+      const current = [
+        ...(panelGroupRef.current?.getLayout() ?? panelLayout),
+      ];
+      const thirdIndex = ([0, 1, 2] as const).find(
+        (i) => i !== leftIndex && i !== rightIndex,
+      )!;
+      const thirdSize = current[thirdIndex];
+      const remaining = 100 - thirdSize;
+      const leftDefault = DEFAULT_PANEL_LAYOUT[leftIndex];
+      const rightDefault = DEFAULT_PANEL_LAYOUT[rightIndex];
+      const defaultSum = leftDefault + rightDefault;
+      const layout = [...current];
+      layout[leftIndex] = (leftDefault / defaultSum) * remaining;
+      layout[rightIndex] = (rightDefault / defaultSum) * remaining;
+      panelGroupRef.current?.setLayout(layout);
+      setPanelLayout(layout);
+      saveLayoutSizes(layout);
+    },
+    [panelLayout],
+  );
 
   const selectArea = (id: string) => {
     setSelectedAreaId(id);
@@ -406,7 +422,7 @@ export default function App() {
 
             <ResizableHandle
               className="app-resize-handle"
-              onDoubleClick={resetPanelLayout}
+              onDoubleClick={() => resetAdjacentPanels(0, 1)}
             />
 
             <ResizablePanel
@@ -444,7 +460,7 @@ export default function App() {
 
             <ResizableHandle
               className="app-resize-handle"
-              onDoubleClick={resetPanelLayout}
+              onDoubleClick={() => resetAdjacentPanels(1, 2)}
             />
 
             <ResizablePanel
