@@ -1,5 +1,7 @@
 import * as React from 'react';
 import type { Area } from '@liner/core';
+import { IconPlusSmall } from '@central-icons-react/round-filled-radius-3-stroke-1/IconPlusSmall';
+import { IconSettingsGear1 } from '@central-icons-react/round-filled-radius-3-stroke-1/IconSettingsGear1';
 import { api, type HealthResponse, subscribePointEvents } from './api';
 import { useToast } from './toast';
 import { OutlineTree } from './components/OutlineTree';
@@ -7,6 +9,16 @@ import { PointDetail } from './components/PointDetail';
 import { FirstRunWizard } from './components/FirstRunWizard';
 import { SettingsModal } from './components/SettingsModal';
 import { TaskCreator } from './components/TaskCreator';
+import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { AreaProgressIcon } from './components/AreaProgressIcon';
+import { InlineRename } from './components/InlineRename';
+import {
+  computeAreaProgress,
+  type AreaProgress,
+} from '@/lib/area-progress';
+import { cn } from '@/lib/utils';
 import {
   loadSelectedAreaId,
   loadSelectedPointId,
@@ -23,7 +35,6 @@ export default function App() {
     null,
   );
   const [areaDescription, setAreaDescription] = React.useState('');
-  const [contextOpen, setContextOpen] = React.useState(true);
   const [refreshKey, setRefreshKey] = React.useState(0);
   const [showCreator, setShowCreator] = React.useState(false);
   const [showSettings, setShowSettings] = React.useState(false);
@@ -32,8 +43,10 @@ export default function App() {
   const [runningPointIds, setRunningPointIds] = React.useState<Set<string>>(
     () => new Set(),
   );
-  const [areaAgentBusy, setAreaAgentBusy] = React.useState(false);
   const [showFirstRun, setShowFirstRun] = React.useState(false);
+  const [areaProgress, setAreaProgress] = React.useState<
+    Record<string, AreaProgress>
+  >({});
 
   const refresh = () => setRefreshKey((k) => k + 1);
 
@@ -54,6 +67,17 @@ export default function App() {
       .health()
       .then(setHealth)
       .catch(() => setHealth(null));
+  }, []);
+
+  React.useEffect(() => {
+    api.getSettings().then((s) => {
+      document.documentElement.dataset.theme =
+        s.theme === 'system'
+          ? window.matchMedia('(prefers-color-scheme: dark)').matches
+            ? 'dark'
+            : 'light'
+          : s.theme;
+    });
   }, []);
 
   React.useEffect(() => {
@@ -91,6 +115,25 @@ export default function App() {
   }, [selectedAreaId, refreshKey]);
 
   React.useEffect(() => {
+    if (areas.length === 0) {
+      setAreaProgress({});
+      return;
+    }
+    let cancelled = false;
+    void Promise.all(
+      areas.map(async (a) => {
+        const points = await api.listPoints(a.id);
+        return [a.id, computeAreaProgress(points)] as const;
+      }),
+    ).then((entries) => {
+      if (!cancelled) setAreaProgress(Object.fromEntries(entries));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [areas, refreshKey]);
+
+  React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'n') {
         e.preventDefault();
@@ -112,21 +155,6 @@ export default function App() {
     await api.updateArea(selectedAreaId, { description: areaDescription });
     const list = await api.listAreas();
     setAreas(list);
-  };
-
-  const refineAreaWithAgent = async () => {
-    if (!selectedAreaId) return;
-    setAreaAgentBusy(true);
-    try {
-      await api.runAreaAgent(selectedAreaId);
-      const list = await api.listAreas();
-      setAreas(list);
-      const area = list.find((a) => a.id === selectedAreaId);
-      if (area) setAreaDescription(area.description);
-      refresh();
-    } finally {
-      setAreaAgentBusy(false);
-    }
   };
 
   const trackAgentRunning = React.useCallback((pointId: string, running: boolean) => {
@@ -160,100 +188,126 @@ export default function App() {
 
   const apiStatus = health
     ? health.engine?.version
-      ? `AI Engine ${health.engine.version} · ${health.workspaceId ?? 'default'}`
-      : `${health.rpc} RPC · ${health.workspaceId ?? 'default'}`
-    : 'API offline';
+      ? `Engine ${health.engine.version}`
+      : `${health.rpc}`
+    : 'Offline';
 
   return (
     <>
-      {showRpcBanner ? (
-        <div className="rpc-banner" role="status">
-          {packaged
-            ? health!.engine?.state === 'failed'
-              ? 'AI engine failed to start — see Settings → AI Engine.'
-              : health!.rpc === 'mock' || health!.engine?.state === 'mock-fallback'
-                ? 'Demo mode — bundled engine unavailable or credentials missing. Settings → AI Engine.'
-                : 'AI engine not ready — check Settings → AI Engine.'
-            : health!.rpc === 'mock'
-              ? 'Mock RPC — start Craft (`bun run craft:server`) for real agent sessions.'
-              : 'Craft unreachable — using fallback. Check `bun run craft:server` and RPC URL in Settings.'}
-          {health!.lastError ? (
-            <span className="rpc-banner-detail"> ({health!.lastError})</span>
-          ) : null}
-        </div>
-      ) : null}
-      <div className="app-shell">
-        <aside className="panel">
-          <div className="panel-header">
-            <span>Areas</span>
-            <button
+      <div className="app-frame">
+        {showRpcBanner ? (
+          <div className="rpc-banner" role="status">
+            {packaged
+              ? health!.engine?.state === 'failed'
+                ? 'AI engine failed — Settings → AI Engine'
+                : health!.rpc === 'mock' || health!.engine?.state === 'mock-fallback'
+                  ? 'Demo mode — Settings → AI Engine'
+                  : 'AI engine not ready'
+              : health!.rpc === 'mock'
+                ? 'Mock RPC — start Craft for live agents'
+                : 'Craft unreachable'}
+            {health!.lastError ? (
+              <span className="rpc-banner-detail"> ({health!.lastError})</span>
+            ) : null}
+          </div>
+        ) : null}
+
+        <div className="app-shell">
+        {/* Left: areas (Linear sidebar) */}
+        <aside className="sidebar-left">
+          <div className="flex h-9 shrink-0 items-center justify-between px-2">
+            <span className="text-12 text-muted-foreground">Areas</span>
+            <Button
               type="button"
+              variant="ghost"
+              size="icon-xs"
+              className="text-muted-foreground"
+              aria-label="New area"
               onClick={async () => {
                 const a = await api.createArea('New Area');
                 setAreas(await api.listAreas());
                 selectArea(a.id);
               }}
             >
-              +
-            </button>
+              <IconPlusSmall className="size-3.5" ariaHidden />
+            </Button>
           </div>
-          <div className="panel-body">
-            {areas.length === 0 ? (
-              <div className="empty-state">
-                <p>No areas yet</p>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    const a = await api.createArea('Inbox');
-                    setAreas(await api.listAreas());
-                    selectArea(a.id);
-                  }}
-                >
-                  Create Inbox
-                </button>
-              </div>
-            ) : (
-              areas.map((a) => (
-                <button
-                  key={a.id}
-                  type="button"
-                  className={`area-chip ${selectedAreaId === a.id ? 'active' : ''}`}
-                  onClick={() => selectArea(a.id)}
-                >
-                  {a.icon ? `${a.icon} ` : ''}
-                  {a.name}
-                </button>
-              ))
-            )}
-          </div>
-          <div
-            style={{
-              padding: 8,
-              borderTop: '1px solid var(--border)',
-              fontSize: 11,
-              color: 'var(--text-muted)',
-            }}
-          >
-            <span>{apiStatus}</span>
-            <button
+          <ScrollArea className="flex-1">
+            <nav className="px-1 pb-2">
+              {areas.length === 0 ? (
+                <div className="px-2 py-8 text-center text-13 text-muted-foreground">
+                  <p className="mb-3">No areas</p>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="text-13 h-7"
+                    onClick={async () => {
+                      const a = await api.createArea('Inbox');
+                      setAreas(await api.listAreas());
+                      selectArea(a.id);
+                    }}
+                  >
+                    Create Inbox
+                  </Button>
+                </div>
+              ) : (
+                areas.map((a) => (
+                  <button
+                    key={a.id}
+                    type="button"
+                    className={cn(
+                      'mb-px flex w-full cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-left text-13 transition-colors',
+                      selectedAreaId === a.id
+                        ? 'bg-accent text-foreground'
+                        : 'text-muted-foreground hover:bg-accent/80 hover:text-foreground',
+                    )}
+                    onClick={() => selectArea(a.id)}
+                  >
+                    <AreaProgressIcon
+                      area={a}
+                      progress={
+                        areaProgress[a.id] ?? {
+                          total: 0,
+                          completed: 0,
+                          ratio: 0,
+                        }
+                      }
+                    />
+                    <InlineRename
+                      value={a.name}
+                      aria-label={`Rename area ${a.name}`}
+                      className="flex-1"
+                      onSave={async (name) => {
+                        await api.updateArea(a.id, { name });
+                        setAreas(await api.listAreas());
+                      }}
+                    />
+                  </button>
+                ))
+              )}
+            </nav>
+          </ScrollArea>
+          <div className="flex shrink-0 items-center justify-between border-t border-border px-2 py-1.5">
+            <span className="truncate text-12 text-muted-foreground">
+              {apiStatus}
+            </span>
+            <Button
               type="button"
-              style={{ marginLeft: 8 }}
+              variant="ghost"
+              size="icon-xs"
+              className="text-muted-foreground"
+              aria-label="Settings"
+              title="Settings (⌘,)"
               onClick={() => setShowSettings(true)}
-              title="Settings (⌘,) — AI Engine tab"
             >
-              ⚙
-            </button>
+              <IconSettingsGear1 className="size-3.5" ariaHidden />
+            </Button>
           </div>
         </aside>
 
-        <section className="panel">
-          <div className="panel-header">
-            <span>{selectedArea?.name ?? 'Tasks'}</span>
-            <button type="button" onClick={() => setShowCreator(true)}>
-              New
-            </button>
-          </div>
-          <div className="panel-body">
+        {/* Center: outline (Bike) */}
+        <section className="main-outline">
+          <ScrollArea className="flex-1">
             {selectedAreaId ? (
               <OutlineTree
                 areaId={selectedAreaId}
@@ -261,52 +315,20 @@ export default function App() {
                 onSelect={selectPoint}
                 refreshKey={refreshKey}
                 runningPointIds={runningPointIds}
+                onPointsChanged={refresh}
               />
             ) : (
-              <div className="empty-state">
-                <p>Select an area to see tasks</p>
-                <p className="empty-state-hint">Or create one with + in the sidebar</p>
-              </div>
+              <p className="px-4 py-12 text-center text-13 text-muted-foreground">
+                Select an area
+              </p>
             )}
-          </div>
+          </ScrollArea>
         </section>
 
-        <main className="panel" style={{ borderRight: 'none' }}>
+        {/* Right: task detail (Linear issue panel) */}
+        <aside className="sidebar-right">
           {selectedArea ? (
-            <>
-              <div className="area-context">
-                <div
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                  }}
-                >
-                  <h2>{selectedArea.name}</h2>
-                  <button
-                    type="button"
-                    onClick={() => setContextOpen((o) => !o)}
-                  >
-                    {contextOpen ? 'Hide' : 'Show'} context
-                  </button>
-                  <button
-                    type="button"
-                    disabled={areaAgentBusy}
-                    onClick={refineAreaWithAgent}
-                  >
-                    {areaAgentBusy ? 'Refining…' : 'Refine with agent'}
-                  </button>
-                </div>
-                {contextOpen ? (
-                  <textarea
-                    value={areaDescription}
-                    onChange={(e) => setAreaDescription(e.target.value)}
-                    onBlur={saveAreaDescription}
-                    rows={3}
-                    placeholder="Area description — shared human/agent context"
-                  />
-                ) : null}
-              </div>
+            selectedPointId ? (
               <PointDetail
                 pointId={selectedPointId}
                 onUpdated={refresh}
@@ -317,14 +339,39 @@ export default function App() {
                   )
                 }
               />
-            </>
+            ) : (
+              <div className="flex min-h-0 flex-1 flex-col">
+                <div className="border-b border-border px-4 py-3">
+                  <h2 className="text-16 font-medium">{selectedArea.name}</h2>
+                  <p className="mt-1 text-13 text-muted-foreground">
+                    Select a task in the outline
+                  </p>
+                </div>
+                <div className="flex-1 p-4">
+                  <label className="text-12 text-muted-foreground">
+                    Area context
+                  </label>
+                  <Textarea
+                    className="mt-1.5 min-h-[120px] resize-none border-border bg-transparent text-14 shadow-none focus-visible:ring-1"
+                    value={areaDescription}
+                    onChange={(e) => setAreaDescription(e.target.value)}
+                    onBlur={saveAreaDescription}
+                    rows={5}
+                    placeholder="Shared human/agent context"
+                  />
+                </div>
+              </div>
+            )
           ) : (
-            <div className="empty-state">
-              <h2>Welcome to Liner</h2>
-              <p>Create an area, add tasks, and promote them through your agent workflow.</p>
+            <div className="flex flex-1 flex-col items-center justify-center px-6 text-center">
+              <p className="text-20 font-medium">Liner</p>
+              <p className="mt-2 text-13 text-muted-foreground">
+                Create an area to begin
+              </p>
             </div>
           )}
-        </main>
+        </aside>
+        </div>
       </div>
 
       {showCreator && selectedAreaId ? (

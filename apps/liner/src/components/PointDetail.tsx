@@ -1,11 +1,27 @@
 import * as React from 'react';
 import type { HarnessEvent, Point, PointState, ThreadMessage } from '@liner/core';
+import { IconEyeOpen } from '@central-icons-react/round-filled-radius-3-stroke-1/IconEyeOpen';
+import { IconLoader } from '@central-icons-react/round-filled-radius-3-stroke-1/IconLoader';
 import { api, subscribePointEvents } from '../api';
 import { CommentCard } from './CommentCard';
 import {
   MentionAutocomplete,
   type MentionItem,
 } from './MentionAutocomplete';
+import { InlineRename } from './InlineRename';
+import { formatStateLabel, StateBadge, StateIcon } from './state-badge';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Separator } from '@/components/ui/separator';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 const STATES: PointState[] = [
   'backlog',
@@ -18,8 +34,16 @@ const STATES: PointState[] = [
   'cancelled',
 ];
 
+const PRIORITIES: Point['priority'][] = [
+  'none',
+  'low',
+  'medium',
+  'high',
+  'urgent',
+];
+
 type Props = {
-  pointId: string | null;
+  pointId: string;
   onUpdated: () => void;
   onNewPoint: () => void;
   onStateNotice?: (
@@ -28,6 +52,14 @@ type Props = {
     actor: 'human' | 'agent' | 'harness',
   ) => void;
 };
+
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <h3 className="text-12 font-medium uppercase tracking-wide text-muted-foreground">
+      {children}
+    </h3>
+  );
+}
 
 export function PointDetail({
   pointId,
@@ -50,6 +82,7 @@ export function PointDetail({
   const [harnessEvents, setHarnessEvents] = React.useState<HarnessEvent[]>([]);
   const [gitBranch, setGitBranch] = React.useState('');
   const [gitPrUrl, setGitPrUrl] = React.useState('');
+  const [metaOpen, setMetaOpen] = React.useState(false);
   const planRef = React.useRef<HTMLTextAreaElement>(null);
   const composerRef = React.useRef<HTMLTextAreaElement>(null);
 
@@ -87,7 +120,6 @@ export function PointDetail({
   }, []);
 
   const load = React.useCallback(async () => {
-    if (!pointId) return;
     const { point: p } = await api.getPoint(pointId);
     setPoint(p);
     setPlan(p.description);
@@ -95,12 +127,9 @@ export function PointDetail({
     setGitBranch(typeof p.meta?.branch === 'string' ? p.meta.branch : '');
     setGitPrUrl(typeof p.meta?.prUrl === 'string' ? p.meta.prUrl : '');
     await api.ensureSession(pointId);
-    const msgs = await api.getMessages(pointId);
-    setMessages(msgs);
-    const status = await api.getAgentStatus(pointId);
-    setAgentRunning(status.running);
-    const events = await api.listHarnessEvents(pointId);
-    setHarnessEvents(events);
+    setMessages(await api.getMessages(pointId));
+    setAgentRunning((await api.getAgentStatus(pointId)).running);
+    setHarnessEvents(await api.listHarnessEvents(pointId));
   }, [pointId]);
 
   React.useEffect(() => {
@@ -108,7 +137,6 @@ export function PointDetail({
   }, [load]);
 
   React.useEffect(() => {
-    if (!pointId) return;
     const unsub = subscribePointEvents(pointId, {
       onMessage: mergeMessage,
       onAgentStatus: setAgentRunning,
@@ -121,9 +149,18 @@ export function PointDetail({
     return unsub;
   }, [pointId, mergeMessage, onStateNotice, onUpdated, load]);
 
+  const changeState = React.useCallback(
+    async (state: PointState) => {
+      await api.updatePoint(pointId, { state });
+      onUpdated();
+      load();
+    },
+    [pointId, onUpdated, load],
+  );
+
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!pointId || !point) return;
+      if (!point) return;
       const tag = (e.target as HTMLElement).tagName;
       const typing = tag === 'INPUT' || tag === 'TEXTAREA';
       if ((e.metaKey || e.ctrlKey) && e.key === 'n') {
@@ -132,39 +169,33 @@ export function PointDetail({
         return;
       }
       if (typing && !(e.metaKey || e.ctrlKey)) return;
-
       if (e.key === 'p' && point.state === 'backlog') {
         e.preventDefault();
-        changeState('todo');
+        void changeState('todo');
       }
       if (e.key === 's' && point.state === 'done') {
         e.preventDefault();
-        changeState('shipped');
+        void changeState('shipped');
       }
       if (e.key === 'x' && point.state !== 'cancelled') {
         e.preventDefault();
-        changeState('cancelled');
+        void changeState('cancelled');
       }
       if (e.key === 'a' && point.state === 'needs-review') {
         e.preventDefault();
-        changeState('in-progress');
+        void changeState('in-progress');
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [pointId, point]);
-
-  if (!pointId) {
-    return (
-      <div className="empty-state">
-        <p>Select a task from the outline</p>
-        <p className="empty-state-hint">Or press New (⌘N) to create one</p>
-      </div>
-    );
-  }
+  }, [point, onNewPoint, changeState]);
 
   if (!point) {
-    return <div className="empty-state">Loading…</div>;
+    return (
+      <div className="flex flex-1 items-center justify-center text-13 text-muted-foreground">
+        Loading…
+      </div>
+    );
   }
 
   const savePlan = async () => {
@@ -177,7 +208,6 @@ export function PointDetail({
   };
 
   const saveGitMeta = async () => {
-    if (!point) return;
     const meta = { ...point.meta };
     const branch = gitBranch.trim();
     const prUrl = gitPrUrl.trim();
@@ -190,29 +220,12 @@ export function PointDetail({
     load();
   };
 
-  const copyBranch = async () => {
-    if (!gitBranch.trim()) return;
-    try {
-      await navigator.clipboard.writeText(gitBranch.trim());
-    } catch {
-      /* ignore */
-    }
-  };
-
-  const changeState = async (state: PointState) => {
-    await api.updatePoint(pointId, { state });
-    onUpdated();
-    load();
-  };
-
   const quoteSelection = () => {
     const el = planRef.current;
     if (!el) return;
-    const start = el.selectionStart;
-    const end = el.selectionEnd;
+    const { selectionStart: start, selectionEnd: end } = el;
     if (start === end) return;
-    const selected = plan.slice(start, end);
-    setPendingQuote(selected);
+    setPendingQuote(plan.slice(start, end));
     composerRef.current?.focus();
   };
 
@@ -260,8 +273,7 @@ export function PointDetail({
     if (!match) return;
     const start = before.length - match[0].length;
     const token = `${trigger}${item.id} `;
-    const next = value.slice(0, start) + token + after;
-    setComposer(next);
+    setComposer(value.slice(0, start) + token + after);
     setMentionPrefix(null);
     requestAnimationFrame(() => {
       const pos = start + token.length;
@@ -272,204 +284,252 @@ export function PointDetail({
 
   return (
     <div className="detail-layout">
-      <div style={{ padding: '12px 20px', borderBottom: '1px solid var(--border)' }}>
-        <input
+      <div className="shrink-0 border-b border-border px-4 py-3">
+        <InlineRename
           value={point.task}
-          onChange={(e) => setPoint({ ...point, task: e.target.value })}
-          onBlur={() =>
-            api.updatePoint(pointId, { task: point.task }).then(onUpdated)
-          }
-          style={{ fontSize: 18, fontWeight: 600, marginBottom: 8 }}
+          size="lg"
+          aria-label="Task title"
+          className="font-medium"
+          onSave={async (task) => {
+            await api.updatePoint(pointId, { task });
+            setPoint((p) => (p ? { ...p, task } : p));
+            onUpdated();
+          }}
         />
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+        <div className="mt-2 flex flex-wrap items-center gap-1.5">
           {agentRunning ? (
-            <span className="agent-running" title="Agent session active">
-              ◉ Agent running
+            <span className="inline-flex items-center gap-1 text-12 text-muted-foreground">
+              <IconLoader className="size-3 animate-spin" ariaHidden />
+              Running
             </span>
           ) : null}
-          <select
+          <Select
             value={point.state}
-            onChange={(e) => changeState(e.target.value as PointState)}
+            onValueChange={(v) => changeState(v as PointState)}
           >
-            {STATES.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
-          <select
+            <SelectTrigger
+              size="sm"
+              className="h-7 w-auto min-w-0 border-0 bg-transparent px-1 text-13 shadow-none focus:ring-0"
+            >
+              <SelectValue>
+                <span className="flex items-center gap-1.5 capitalize">
+                  <StateIcon state={point.state} />
+                  {formatStateLabel(point.state)}
+                </span>
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              {STATES.map((s) => (
+                <SelectItem key={s} value={s} className="text-13 capitalize">
+                  <span className="flex items-center gap-1.5">
+                    <StateIcon state={s} />
+                    {formatStateLabel(s)}
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select
             value={point.priority}
-            onChange={(e) =>
+            onValueChange={(v) =>
               api
-                .updatePoint(pointId, {
-                  priority: e.target.value as Point['priority'],
-                })
+                .updatePoint(pointId, { priority: v as Point['priority'] })
                 .then(load)
             }
           >
-            {['none', 'low', 'medium', 'high', 'urgent'].map((p) => (
-              <option key={p} value={p}>
-                {p}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger
+              size="sm"
+              className="h-7 w-auto min-w-0 border-0 bg-transparent px-1 text-13 text-muted-foreground shadow-none focus:ring-0"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {PRIORITIES.map((p) => (
+                <SelectItem key={p} value={p} className="text-13 capitalize">
+                  {p}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <StateBadge state={point.state} />
+        </div>
+        <div className="mt-2 flex flex-wrap gap-1">
           {point.state === 'backlog' ? (
-            <button onClick={() => changeState('todo')} title="Shortcut: P">
-              Promote to todo
-            </button>
+            <Button
+              type="button"
+              variant="ghost"
+              className="text-13 h-7 px-2"
+              onClick={() => changeState('todo')}
+            >
+              Promote
+            </Button>
           ) : null}
           {point.state === 'todo' ? (
-            <button type="button" onClick={() => runAgent('plan')}>
-              Agent: write plan
-            </button>
+            <Button
+              type="button"
+              variant="ghost"
+              className="text-13 h-7 px-2"
+              onClick={() => runAgent('plan')}
+            >
+              Plan
+            </Button>
           ) : null}
           {point.state === 'needs-review' ? (
-            <button
-              className="primary"
+            <Button
+              type="button"
+              variant="ghost"
+              className="text-13 h-7 px-2"
               onClick={() => changeState('in-progress')}
-              title="Shortcut: A"
             >
-              Approve plan
-            </button>
+              Approve
+            </Button>
           ) : null}
           {point.state === 'in-progress' ? (
-            <button type="button" onClick={() => runAgent('execute')}>
-              Agent: execute
-            </button>
+            <Button
+              type="button"
+              variant="ghost"
+              className="text-13 h-7 px-2"
+              onClick={() => runAgent('execute')}
+            >
+              Execute
+            </Button>
           ) : null}
           {point.state === 'done' ? (
-            <button
-              className="primary"
+            <Button
+              type="button"
+              variant="ghost"
+              className="text-13 h-7 px-2"
               onClick={() => changeState('shipped')}
-              title="Shortcut: S"
             >
               Ship
-            </button>
-          ) : null}
-          {point.state === 'shipped' ? (
-            <>
-              <button
-                type="button"
-                onClick={() => changeState('done')}
-                title="Reopen as done"
-              >
-                Reopen (done)
-              </button>
-              <button
-                type="button"
-                onClick={() => changeState('in-progress')}
-                title="Reopen for more work"
-              >
-                Reopen (in progress)
-              </button>
-            </>
+            </Button>
           ) : null}
           {point.state !== 'cancelled' ? (
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              className="text-13 h-7 px-2 text-muted-foreground"
               onClick={() => changeState('cancelled')}
-              title="Shortcut: X"
             >
               Cancel
-            </button>
+            </Button>
           ) : null}
         </div>
-        <div className="shortcut-hint">
-          ⌘N new · P promote · A approve · S ship · X cancel
-        </div>
+        <button
+          type="button"
+          className="mt-2 flex cursor-pointer items-center gap-1 text-12 text-muted-foreground hover:text-foreground"
+          onClick={() => setMetaOpen((o) => !o)}
+        >
+          <IconEyeOpen size={12} ariaHidden className="shrink-0" />
+          {metaOpen ? 'Hide' : 'Show'} plan & git
+        </button>
       </div>
 
-      <div className="plan-panel">
-        <h3>Plan</h3>
-        <textarea
-          ref={planRef}
-          value={plan}
-          onChange={(e) => setPlan(e.target.value)}
-          onBlur={savePlan}
-          rows={6}
-          placeholder="Agent-authored plan (markdown)"
-        />
-        <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
-          <button type="button" onClick={quoteSelection}>
-            Quote in reply
-          </button>
-          <button type="button" onClick={savePlan}>
-            Save plan
-          </button>
-        </div>
-        <h3 style={{ marginTop: 16 }}>Git</h3>
-        <div className="field">
-          <label>Branch</label>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <input
-              value={gitBranch}
-              onChange={(e) => setGitBranch(e.target.value)}
-              onBlur={saveGitMeta}
-              placeholder="feature/liner-v1.4"
-            />
-            <button type="button" disabled={!gitBranch.trim()} onClick={copyBranch}>
-              Copy
-            </button>
+      {metaOpen ? (
+        <ScrollArea className="max-h-[36vh] shrink-0 border-b border-border">
+          <div className="space-y-4 px-4 py-3">
+            <section>
+              <SectionLabel>Plan</SectionLabel>
+              <Textarea
+                ref={planRef}
+                className="mt-1.5 min-h-[100px] resize-none border-border bg-transparent font-mono text-13 shadow-none"
+                value={plan}
+                onChange={(e) => setPlan(e.target.value)}
+                onBlur={savePlan}
+                placeholder="Markdown plan"
+              />
+              <div className="mt-1.5 flex gap-1">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="text-12 h-6 px-2"
+                  onClick={quoteSelection}
+                >
+                  Quote
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="text-12 h-6 px-2"
+                  onClick={savePlan}
+                >
+                  Save
+                </Button>
+              </div>
+            </section>
+            <section>
+              <SectionLabel>Git</SectionLabel>
+              <Input
+                className="mt-1.5 h-8 font-mono text-13"
+                value={gitBranch}
+                onChange={(e) => setGitBranch(e.target.value)}
+                onBlur={saveGitMeta}
+                placeholder="branch"
+              />
+              <Input
+                className="mt-1.5 h-8 text-13"
+                value={gitPrUrl}
+                onChange={(e) => setGitPrUrl(e.target.value)}
+                onBlur={saveGitMeta}
+                placeholder="PR URL"
+              />
+            </section>
+            <section>
+              <SectionLabel>Notes</SectionLabel>
+              <Textarea
+                className="mt-1.5 min-h-[60px] resize-none border-border bg-transparent text-13 shadow-none"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                onBlur={saveNotes}
+              />
+            </section>
+            {harnessEvents.length > 0 ? (
+              <section>
+                <SectionLabel>Harness</SectionLabel>
+                <ul className="harness-log mt-1">
+                  {harnessEvents.slice(0, 8).map((ev) => (
+                    <li key={ev.id}>
+                      <span className="harness-log-type">{ev.type}</span>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ) : null}
           </div>
-        </div>
-        <div className="field">
-          <label>PR URL</label>
-          <input
-            value={gitPrUrl}
-            onChange={(e) => setGitPrUrl(e.target.value)}
-            onBlur={saveGitMeta}
-            placeholder="https://github.com/…/pull/123"
-          />
-        </div>
-        <h3 style={{ marginTop: 16 }}>Notes</h3>
-        <textarea
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-          onBlur={saveNotes}
-          rows={3}
-          placeholder="Human scratchpad"
-        />
-        {harnessEvents.length > 0 ? (
-          <>
-            <h3 style={{ marginTop: 16 }}>Harness activity</h3>
-            <ul className="harness-log">
-              {harnessEvents.slice(0, 12).map((ev) => (
-                <li key={ev.id}>
-                  <span className="harness-log-type">{ev.type}</span>
-                  <span className="harness-log-time">
-                    {new Date(ev.createdAt).toLocaleString()}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </>
-        ) : null}
-      </div>
+        </ScrollArea>
+      ) : null}
 
-      <div className="thread-panel">
-        <div className="thread-scroll">
-          {messages.map((m) => (
-            <CommentCard
-              key={m.id}
-              message={m}
-              pointId={pointId}
-              onPermissionResolved={load}
-            />
-          ))}
-        </div>
-        <div className="composer composer-with-mentions">
+      <div className="thread-panel min-h-0 flex-1">
+        <ScrollArea className="flex-1 px-4 py-3">
+          <div className="flex flex-col gap-2">
+            {messages.length === 0 ? (
+              <p className="text-13 text-muted-foreground">No messages yet</p>
+            ) : (
+              messages.map((m) => (
+                <CommentCard
+                  key={m.id}
+                  message={m}
+                  pointId={pointId}
+                  onPermissionResolved={load}
+                />
+              ))
+            )}
+          </div>
+        </ScrollArea>
+        <Separator />
+        <div className="composer composer-with-mentions shrink-0 px-4 py-3">
           {pendingQuote ? (
-            <div className="collapsed-tools">
-              Quoting: {pendingQuote.slice(0, 80)}
-              {pendingQuote.length > 80 ? '…' : ''}
+            <p className="mb-2 truncate text-12 text-muted-foreground">
+              Quote: {pendingQuote.slice(0, 60)}
+              {pendingQuote.length > 60 ? '…' : ''}
               <button
                 type="button"
-                style={{ marginLeft: 8 }}
+                className="ml-2 cursor-pointer underline"
                 onClick={() => setPendingQuote(null)}
               >
-                Clear
+                clear
               </button>
-            </div>
+            </p>
           ) : null}
           <MentionAutocomplete
             items={mentionItems}
@@ -478,26 +538,29 @@ export function PointDetail({
             visible={mentionPrefix !== null}
             onSelect={insertMention}
           />
-          <textarea
+          <Textarea
             ref={composerRef}
+            className="min-h-[56px] resize-none border-border bg-transparent text-14 shadow-none"
             value={composer}
             onChange={(e) => {
               setComposer(e.target.value);
-              updateComposerMentions(
-                e.target.value,
-                e.target.selectionStart,
-              );
+              updateComposerMentions(e.target.value, e.target.selectionStart);
             }}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) send();
             }}
-            rows={3}
-            placeholder="Reply… @code-reviewer /brainstorming"
+            rows={2}
+            placeholder="Reply…"
           />
-          <div className="composer-actions">
-            <button className="primary" onClick={send}>
+          <div className="mt-2 flex justify-end">
+            <Button
+              type="button"
+              variant="ghost"
+              className="text-13 h-7"
+              onClick={send}
+            >
               Send
-            </button>
+            </Button>
           </div>
         </div>
       </div>
