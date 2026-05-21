@@ -22,6 +22,7 @@
       "version": "0.2.0",
       "dependencies": {
         "@central-icons-react/round-filled-radius-3-stroke-1": "^1.1.241",
+        "@central-icons-react/round-filled-radius-3-stroke-1.5": "^1.1.241",
         "@central-icons-react/round-outlined-radius-3-stroke-1.5": "^1.1.241",
         "@central-icons-react/round-outlined-radius-3-stroke-2": "^1.1.241",
         "@liner/core": "workspace:*",
@@ -131,6 +132,8 @@
     "@babel/types": ["@babel/types@7.29.0", "", { "dependencies": { "@babel/helper-string-parser": "^7.27.1", "@babel/helper-validator-identifier": "^7.28.5" } }, "sha512-LwdZHpScM4Qz8Xw2iKSzS+cfglZzJGvofQICy7W7v4caru4EaAmyUuO6BGrbyQ2mYV11W0U8j5mBhd14dd3B0A=="],
 
     "@central-icons-react/round-filled-radius-3-stroke-1": ["@central-icons-react/round-filled-radius-3-stroke-1@1.1.241", "", { "peerDependencies": { "react": ">=14.0.0 <= 19" } }, "sha512-J+JZCEYymkDz8zJNOFQEdLVDJr0YVGqgnqvwXIS9W74hMa+1OX//ykNhIQvA1PeJgXSgbtk1BeY7p1opd9uytw=="],
+
+    "@central-icons-react/round-filled-radius-3-stroke-1.5": ["@central-icons-react/round-filled-radius-3-stroke-1.5@1.1.244", "", { "peerDependencies": { "react": ">=14.0.0 <= 19" } }, "sha512-ahDyA2nx2dhzUgmdin33UClr9NxCEa7X9TmPfFWkPg/LtLDK2M8Oe5MHi2uYQngxiBquuibxpb0vE+BrmKUynQ=="],
 
     "@central-icons-react/round-outlined-radius-3-stroke-1.5": ["@central-icons-react/round-outlined-radius-3-stroke-1.5@1.1.244", "", { "peerDependencies": { "react": ">=14.0.0 <= 19" } }, "sha512-+l1bZAQ2wWvFaLINchPAX5QOLkEXTAYLjhiOxVkkksz+1m+kQE+rMnoZn8N4l7reMiisXzEo5tpskfWEhp78TQ=="],
 

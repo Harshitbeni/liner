@@ -1,13 +1,17 @@
-import { IconCalendar1 } from '@central-icons-react/round-filled-radius-3-stroke-1/IconCalendar1';
-import { IconInboxEmpty } from '@central-icons-react/round-filled-radius-3-stroke-1/IconInboxEmpty';
+import { IconCalendar1 } from '@central-icons-react/round-filled-radius-3-stroke-1.5/IconCalendar1';
+import { IconInboxEmpty } from '@central-icons-react/round-filled-radius-3-stroke-1.5/IconInboxEmpty';
+import { IconCircle } from '@central-icons-react/round-outlined-radius-3-stroke-1.5/IconCircle';
 import type { Area } from '@liner/core';
 import { isInboxArea, isTodayView } from '@/lib/areas';
 import type { AreaProgress } from '@/lib/area-progress';
 import { cn } from '@/lib/utils';
 
-const SIZE = 14;
-const R = 5.25;
+/** Sidebar nav icon size (Central Icons: round, radius-3, stroke 1.5). Smart areas use filled glyphs. */
+export const SIDEBAR_ICON_SIZE = 16;
+const SIZE = SIDEBAR_ICON_SIZE;
+const R = 6;
 const C = 2 * Math.PI * R;
+const RING_STROKE = 1.5;
 
 type Props = {
   area: Pick<Area, 'id' | 'name' | 'icon'>;
@@ -17,14 +21,18 @@ type Props = {
 
 function InnerIcon({
   area,
-  iconSize = 10,
+  iconSize = 8,
 }: {
   area: Pick<Area, 'id' | 'name' | 'icon'>;
   iconSize?: number;
 }) {
   if (area.icon) {
     return (
-      <span className="text-[10px] leading-none" aria-hidden>
+      <span
+        className="leading-none"
+        style={{ fontSize: iconSize }}
+        aria-hidden
+      >
         {area.icon}
       </span>
     );
@@ -48,7 +56,11 @@ function InnerIcon({
     );
   }
   return (
-    <span className="block size-1 rounded-full bg-current opacity-40" aria-hidden />
+    <IconCircle
+      size={8}
+      ariaHidden
+      className="text-current opacity-40"
+    />
   );
 }
 
@@ -93,7 +105,7 @@ export function AreaProgressIcon({ area, progress, className }: Props) {
           r={R}
           fill="none"
           stroke="currentColor"
-          strokeWidth={1.75}
+          strokeWidth={RING_STROKE}
           className="opacity-20"
         />
         {progress.total > 0 && progress.ratio > 0 ? (
@@ -103,7 +115,7 @@ export function AreaProgressIcon({ area, progress, className }: Props) {
             r={R}
             fill="none"
             stroke="currentColor"
-            strokeWidth={1.75}
+            strokeWidth={RING_STROKE}
             strokeLinecap="round"
             strokeDasharray={C}
             strokeDashoffset={offset}
@@ -113,7 +125,7 @@ export function AreaProgressIcon({ area, progress, className }: Props) {
         ) : null}
       </svg>
       <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-        <InnerIcon area={area} />
+        <InnerIcon area={area} iconSize={8} />
       </div>
     </div>
   );

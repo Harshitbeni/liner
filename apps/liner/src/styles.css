@@ -172,10 +172,14 @@ body,
   left: 50%;
   width: 1px;
   transform: translateX(-50%);
-  background: color-mix(in oklch, var(--border) 60%, transparent);
+  background: var(--border);
 }
 
-.outline-row.dimmed {
+[data-theme='dark'] .outline-guide {
+  background: var(--ring);
+}
+
+.outline-row-content.dimmed {
   opacity: 0.4;
 }
 

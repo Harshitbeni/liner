@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@central-icons-react/round-filled-radius-3-stroke-1": "^1.1.241",
+    "@central-icons-react/round-filled-radius-3-stroke-1.5": "^1.1.241",
     "@central-icons-react/round-outlined-radius-3-stroke-1.5": "^1.1.241",
     "@central-icons-react/round-outlined-radius-3-stroke-2": "^1.1.241",
     "@liner/core": "workspace:*",

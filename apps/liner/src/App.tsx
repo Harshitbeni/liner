@@ -1,8 +1,8 @@
 import * as React from 'react';
 import type { ImperativePanelGroupHandle } from 'react-resizable-panels';
 import type { Area, Point } from '@liner/core';
-import { IconPlusSmall } from '@central-icons-react/round-filled-radius-3-stroke-1/IconPlusSmall';
-import { IconSettingsGear1 } from '@central-icons-react/round-filled-radius-3-stroke-1/IconSettingsGear1';
+import { IconPlusSmall } from '@central-icons-react/round-outlined-radius-3-stroke-1.5/IconPlusSmall';
+import { IconSettingsGear1 } from '@central-icons-react/round-outlined-radius-3-stroke-1.5/IconSettingsGear1';
 import { api, type HealthResponse, subscribePointEvents } from './api';
 import { useToast } from './toast';
 import { OutlineTree } from './components/OutlineTree';
@@ -372,7 +372,7 @@ export default function App() {
                         selectArea(a.id);
                       }}
                     >
-                      <IconPlusSmall className="size-3.5" ariaHidden />
+                      <IconPlusSmall size={16} ariaHidden />
                     </Button>
                   </div>
                   {userAreas.length === 0 ? (
@@ -399,7 +399,7 @@ export default function App() {
               title="Settings (⌘,)"
               onClick={() => setShowSettings(true)}
             >
-              <IconSettingsGear1 className="size-3.5" ariaHidden />
+              <IconSettingsGear1 size={16} ariaHidden />
             </Button>
           </div>
             </ResizablePanel>

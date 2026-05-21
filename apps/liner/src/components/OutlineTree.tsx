@@ -369,7 +369,6 @@ export function OutlineTree({
               isSelected && 'bg-accent text-foreground',
               !isSelected && 'text-foreground hover:bg-accent/50',
               dragOverId === point.id && 'bg-muted',
-              selectedId && !inBranch && 'dimmed',
               inBranch && selectedId && 'focused-branch',
               isToday && !touched && 'opacity-60',
             )}
@@ -403,28 +402,35 @@ export function OutlineTree({
             {guides.map((show, level) => (
               <span
                 key={level}
-                className="relative w-4 shrink-0"
+                className="relative flex w-5 shrink-0 items-center justify-center"
                 aria-hidden
               >
                 {show ? <span className="outline-guide" /> : null}
               </span>
             ))}
-            <div className="flex min-w-0 flex-1 items-center gap-1">
+            <div
+              className={cn(
+                'outline-row-content flex min-w-0 flex-1 items-center gap-1',
+                selectedId && !inBranch && 'dimmed',
+              )}
+            >
+            <span className="flex size-5 shrink-0 items-center justify-center">
+              {hasChildren ? (
+                <button
+                  type="button"
+                  className="flex size-5 cursor-pointer items-center justify-center text-foreground/70 hover:text-foreground"
+                  aria-label={isCollapsed ? 'Expand' : 'Collapse'}
+                  onClick={(e) => toggleCollapse(point.id, e)}
+                >
+                  {isCollapsed ? (
+                    <IconChevronRightSmall size={16} ariaHidden />
+                  ) : (
+                    <IconChevronDownSmall size={16} ariaHidden />
+                  )}
+                </button>
+              ) : null}
+            </span>
             <StateBadge state={point.state} iconOnly />
-            {hasChildren ? (
-              <button
-                type="button"
-                className="flex size-5 shrink-0 cursor-pointer items-center justify-center text-foreground/70 hover:text-foreground"
-                aria-label={isCollapsed ? 'Expand' : 'Collapse'}
-                onClick={(e) => toggleCollapse(point.id, e)}
-              >
-                {isCollapsed ? (
-                  <IconChevronRightSmall size={16} ariaHidden />
-                ) : (
-                  <IconChevronDownSmall size={16} ariaHidden />
-                )}
-              </button>
-            ) : null}
             <InlineRename
               value={point.task}
               aria-label={`Rename task ${point.task}`}
