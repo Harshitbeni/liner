@@ -9,7 +9,7 @@ import {
   type MentionItem,
 } from './MentionAutocomplete';
 import { InlineRename } from './InlineRename';
-import { formatStateLabel, StateBadge, StateIcon } from './state-badge';
+import { formatStateLabel, StateIcon } from './state-badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -296,7 +296,7 @@ export function PointDetail({
             onUpdated();
           }}
         />
-        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+        <div className="mt-2 flex flex-col gap-1">
           {agentRunning ? (
             <span className="inline-flex items-center gap-1 text-12 text-muted-foreground">
               <IconLoader className="size-3 animate-spin" ariaHidden />
@@ -309,7 +309,7 @@ export function PointDetail({
           >
             <SelectTrigger
               size="sm"
-              className="h-7 w-auto min-w-0 border-0 bg-transparent px-1 text-13 shadow-none focus:ring-0"
+              className="h-7 w-full min-w-0 border-0 bg-transparent px-1 text-13 shadow-none focus:ring-0"
             >
               <SelectValue>
                 <span className="flex items-center gap-1.5 capitalize">
@@ -339,7 +339,7 @@ export function PointDetail({
           >
             <SelectTrigger
               size="sm"
-              className="h-7 w-auto min-w-0 border-0 bg-transparent px-1 text-13 text-muted-foreground shadow-none focus:ring-0"
+              className="h-7 w-full min-w-0 border-0 bg-transparent px-1 text-13 text-muted-foreground shadow-none focus:ring-0"
             >
               <SelectValue />
             </SelectTrigger>
@@ -351,7 +351,6 @@ export function PointDetail({
               ))}
             </SelectContent>
           </Select>
-          <StateBadge state={point.state} />
         </div>
         <div className="mt-2 flex flex-wrap gap-1">
           {point.state === 'backlog' ? (

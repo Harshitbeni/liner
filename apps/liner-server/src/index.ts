@@ -15,6 +15,7 @@ import {
   broadcastPointMessage,
   broadcastPointPing,
   broadcastStateChange,
+  configurePointActivity,
   ensureSessionBridge,
   subscribePointSse,
 } from './sse';
@@ -48,6 +49,9 @@ async function initRuntime(workspaceId?: string): Promise<NonNullable<typeof run
   }
   runtime = await createLinerRuntime(id, preferred);
   installHarnessBridge(runtime);
+  configurePointActivity((pointId) => {
+    runtime?.store.touchPoint(pointId);
+  });
   return runtime;
 }
 
@@ -298,6 +302,14 @@ try {
           return json({ message });
         }
 
+        if (path === '/points/today' && req.method === 'GET') {
+          const since = url.searchParams.get('since');
+          if (!since) {
+            return json({ error: 'since query param required (ISO timestamp)' }, 400);
+          }
+          return json(store.listPointsWorkedSince(since));
+        }
+
         if (path === '/points' && req.method === 'GET') {
           const areaId = url.searchParams.get('areaId') ?? undefined;
           const parentId = url.searchParams.get('parentId');
@@ -428,6 +440,7 @@ try {
           const approved = body.approved === true;
           if (!requestId) return json({ error: 'requestId required' }, 400);
           await harness.respondToPermission(id, requestId, approved);
+          store.touchPoint(id);
           return json({ ok: true });
         }
 
@@ -441,6 +454,7 @@ try {
           const intent = String(body.intent ?? 'plan') as AgentIntent;
           const childId = body.childId as string | undefined;
           const result = await harness.runAgent(id, intent, childId);
+          store.touchPoint(id);
           return json(result);
         }
 
@@ -468,6 +482,7 @@ try {
             mentionAgents: resolved.agents,
             mentionSkills: resolved.skills,
           });
+          store.touchPoint(id);
           broadcastPointMessage(id, msg);
           return json(msg);
         }

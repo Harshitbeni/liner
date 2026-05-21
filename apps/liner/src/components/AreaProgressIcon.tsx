@@ -1,5 +1,7 @@
+import { IconCalendar1 } from '@central-icons-react/round-filled-radius-3-stroke-1/IconCalendar1';
 import { IconInboxEmpty } from '@central-icons-react/round-filled-radius-3-stroke-1/IconInboxEmpty';
 import type { Area } from '@liner/core';
+import { isInboxArea, isTodayView } from '@/lib/areas';
 import type { AreaProgress } from '@/lib/area-progress';
 import { cn } from '@/lib/utils';
 
@@ -8,20 +10,16 @@ const R = 5.25;
 const C = 2 * Math.PI * R;
 
 type Props = {
-  area: Pick<Area, 'name' | 'icon'>;
+  area: Pick<Area, 'id' | 'name' | 'icon'>;
   progress: AreaProgress;
   className?: string;
 };
-
-function isInboxArea(area: Pick<Area, 'name'>) {
-  return area.name.trim().toLowerCase() === 'inbox';
-}
 
 function InnerIcon({
   area,
   iconSize = 10,
 }: {
-  area: Pick<Area, 'name' | 'icon'>;
+  area: Pick<Area, 'id' | 'name' | 'icon'>;
   iconSize?: number;
 }) {
   if (area.icon) {
@@ -29,6 +27,15 @@ function InnerIcon({
       <span className="text-[10px] leading-none" aria-hidden>
         {area.icon}
       </span>
+    );
+  }
+  if (isTodayView(area.id)) {
+    return (
+      <IconCalendar1
+        size={iconSize}
+        ariaHidden
+        className="text-current opacity-90"
+      />
     );
   }
   if (isInboxArea(area)) {
@@ -51,7 +58,7 @@ export function AreaProgressIcon({ area, progress, className }: Props) {
       ? 'No tasks'
       : `${progress.completed} of ${progress.total} complete`;
 
-  if (isInboxArea(area)) {
+  if (isTodayView(area.id) || isInboxArea(area)) {
     return (
       <div
         className={cn('flex shrink-0 items-center justify-center', className)}

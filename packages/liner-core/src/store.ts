@@ -387,6 +387,26 @@ export class OutlineStore {
       .filter((p): p is Point => p !== null);
   }
 
+  /** Bump updated_at without changing other fields (chat, harness, etc.). */
+  touchPoint(pointId: string): Point | null {
+    const existing = this.getPoint(pointId);
+    if (!existing) return null;
+    const ts = now();
+    this.db.run('UPDATE points SET updated_at = ? WHERE id = ?', [ts, pointId]);
+    return this.getPoint(pointId);
+  }
+
+  listPointsWorkedSince(since: string): Point[] {
+    const rows = this.db
+      .query(
+        `SELECT * FROM points
+         WHERE updated_at >= ? OR created_at >= ?
+         ORDER BY updated_at DESC`,
+      )
+      .all(since, since) as Record<string, unknown>[];
+    return rows.map(rowToPoint);
+  }
+
   logHarnessEvent(
     pointId: string,
     type: HarnessEventType,
@@ -398,6 +418,7 @@ export class OutlineStore {
       'INSERT INTO harness_events (id, point_id, type, payload, created_at) VALUES (?, ?, ?, ?, ?)',
       [id, pointId, type, JSON.stringify(payload), ts],
     );
+    this.touchPoint(pointId);
     return {
       id,
       pointId,

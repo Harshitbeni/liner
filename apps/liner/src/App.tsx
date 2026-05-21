@@ -1,5 +1,6 @@
 import * as React from 'react';
-import type { Area } from '@liner/core';
+import type { ImperativePanelGroupHandle } from 'react-resizable-panels';
+import type { Area, Point } from '@liner/core';
 import { IconPlusSmall } from '@central-icons-react/round-filled-radius-3-stroke-1/IconPlusSmall';
 import { IconSettingsGear1 } from '@central-icons-react/round-filled-radius-3-stroke-1/IconSettingsGear1';
 import { api, type HealthResponse, subscribePointEvents } from './api';
@@ -12,16 +13,30 @@ import { TaskCreator } from './components/TaskCreator';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import {
+  ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup,
+} from '@/components/ui/resizable';
 import { AreaProgressIcon } from './components/AreaProgressIcon';
 import { InlineRename } from './components/InlineRename';
 import {
   computeAreaProgress,
   type AreaProgress,
 } from '@/lib/area-progress';
+import {
+  isTodayView,
+  partitionAreas,
+  syntheticTodayArea,
+} from '@/lib/areas';
+import { TODAY_VIEW_ID, startOfLocalDayIso } from '@/lib/today';
 import { cn } from '@/lib/utils';
 import {
+  DEFAULT_PANEL_LAYOUT,
+  loadLayoutSizes,
   loadSelectedAreaId,
   loadSelectedPointId,
+  saveLayoutSizes,
   saveSelectedAreaId,
   saveSelectedPointId,
 } from './storage';
@@ -47,8 +62,26 @@ export default function App() {
   const [areaProgress, setAreaProgress] = React.useState<
     Record<string, AreaProgress>
   >({});
+  const [defaultAreaId, setDefaultAreaId] = React.useState<string | null>(null);
+  const todaySince = React.useMemo(() => startOfLocalDayIso(), [refreshKey]);
+  const [panelLayout, setPanelLayout] = React.useState<number[]>(() =>
+    loadLayoutSizes(),
+  );
+  const panelGroupRef = React.useRef<ImperativePanelGroupHandle>(null);
 
   const refresh = () => setRefreshKey((k) => k + 1);
+
+  const onPanelLayout = React.useCallback((sizes: number[]) => {
+    setPanelLayout(sizes);
+    saveLayoutSizes(sizes);
+  }, []);
+
+  const resetPanelLayout = React.useCallback(() => {
+    const layout = [...DEFAULT_PANEL_LAYOUT];
+    panelGroupRef.current?.setLayout(layout);
+    setPanelLayout(layout);
+    saveLayoutSizes(layout);
+  }, []);
 
   const selectArea = (id: string) => {
     setSelectedAreaId(id);
@@ -77,6 +110,7 @@ export default function App() {
             ? 'dark'
             : 'light'
           : s.theme;
+      setDefaultAreaId(s.defaultAreaId);
     });
   }, []);
 
@@ -87,7 +121,8 @@ export default function App() {
       setAreas(list);
       const storedArea = loadSelectedAreaId();
       const areaId =
-        storedArea && list.some((a) => a.id === storedArea)
+        storedArea &&
+        (storedArea === TODAY_VIEW_ID || list.some((a) => a.id === storedArea))
           ? storedArea
           : list[0]?.id ?? null;
       if (areaId) {
@@ -102,12 +137,13 @@ export default function App() {
   }, [refreshHealth]);
 
   React.useEffect(() => {
+    if (isTodayView(selectedAreaId)) return;
     const area = areas.find((a) => a.id === selectedAreaId);
     if (area) setAreaDescription(area.description);
   }, [selectedAreaId, areas]);
 
   React.useEffect(() => {
-    if (!selectedAreaId) return;
+    if (!selectedAreaId || isTodayView(selectedAreaId)) return;
     api.listPoints(selectedAreaId, null).then((roots) => {
       const dismissed = localStorage.getItem('liner:first-run-dismissed');
       if (roots.length === 0 && !dismissed) setShowFirstRun(true);
@@ -120,18 +156,25 @@ export default function App() {
       return;
     }
     let cancelled = false;
-    void Promise.all(
-      areas.map(async (a) => {
+    void Promise.all([
+      ...areas.map(async (a) => {
         const points = await api.listPoints(a.id);
         return [a.id, computeAreaProgress(points)] as const;
       }),
-    ).then((entries) => {
+      api.listTodayPoints(todaySince).then((points) => {
+        const count = points.length;
+        return [
+          TODAY_VIEW_ID,
+          { total: count, completed: 0, ratio: count > 0 ? 1 : 0 },
+        ] as const;
+      }),
+    ]).then((entries) => {
       if (!cancelled) setAreaProgress(Object.fromEntries(entries));
     });
     return () => {
       cancelled = true;
     };
-  }, [areas, refreshKey]);
+  }, [areas, refreshKey, todaySince]);
 
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -148,10 +191,73 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  const selectedArea = areas.find((a) => a.id === selectedAreaId);
+  const selectedArea = isTodayView(selectedAreaId)
+    ? syntheticTodayArea()
+    : areas.find((a) => a.id === selectedAreaId);
+  const { inbox, userAreas } = React.useMemo(
+    () => partitionAreas(areas),
+    [areas],
+  );
+  const todayArea = syntheticTodayArea();
+  const areaNames = React.useMemo(
+    () => Object.fromEntries(areas.map((a) => [a.id, a.name])),
+    [areas],
+  );
+
+  const creatorAreaId =
+    selectedAreaId && !isTodayView(selectedAreaId)
+      ? selectedAreaId
+      : defaultAreaId ?? inbox?.id ?? areas[0]?.id ?? null;
+
+  const goToPointInArea = React.useCallback(
+    (point: Point) => {
+      selectArea(point.areaId);
+      selectPoint(point.id);
+      refresh();
+    },
+    [refresh],
+  );
+
+  const renderAreaRow = (a: Area, options?: { readonly?: boolean }) => (
+    <button
+      key={a.id}
+      type="button"
+      className={cn(
+        'mb-px flex w-full cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-left text-13 transition-colors',
+        selectedAreaId === a.id
+          ? 'bg-accent text-foreground'
+          : 'text-muted-foreground hover:bg-accent/80 hover:text-foreground',
+      )}
+      onClick={() => selectArea(a.id)}
+    >
+      <AreaProgressIcon
+        area={a}
+        progress={
+          areaProgress[a.id] ?? {
+            total: 0,
+            completed: 0,
+            ratio: 0,
+          }
+        }
+      />
+      {options?.readonly ? (
+        <span className="flex-1 truncate">{a.name}</span>
+      ) : (
+        <InlineRename
+          value={a.name}
+          aria-label={`Rename area ${a.name}`}
+          className="flex-1"
+          onSave={async (name) => {
+            await api.updateArea(a.id, { name });
+            setAreas(await api.listAreas());
+          }}
+        />
+      )}
+    </button>
+  );
 
   const saveAreaDescription = async () => {
-    if (!selectedAreaId) return;
+    if (!selectedAreaId || isTodayView(selectedAreaId)) return;
     await api.updateArea(selectedAreaId, { description: areaDescription });
     const list = await api.listAreas();
     setAreas(list);
@@ -212,28 +318,23 @@ export default function App() {
           </div>
         ) : null}
 
-        <div className="app-shell">
-        {/* Left: areas (Linear sidebar) */}
-        <aside className="sidebar-left">
-          <div className="flex h-9 shrink-0 items-center justify-between px-2">
-            <span className="text-12 text-muted-foreground">Areas</span>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-xs"
-              className="text-muted-foreground"
-              aria-label="New area"
-              onClick={async () => {
-                const a = await api.createArea('New Area');
-                setAreas(await api.listAreas());
-                selectArea(a.id);
-              }}
+        <div className="app-canvas">
+          <ResizablePanelGroup
+            ref={panelGroupRef}
+            direction="horizontal"
+            className="app-layout"
+            onLayout={onPanelLayout}
+          >
+            <ResizablePanel
+              id="nav"
+              order={1}
+              defaultSize={panelLayout[0] ?? DEFAULT_PANEL_LAYOUT[0]}
+              minSize={12}
+              maxSize={35}
+              className="app-gutter app-gutter-left"
             >
-              <IconPlusSmall className="size-3.5" ariaHidden />
-            </Button>
-          </div>
           <ScrollArea className="flex-1">
-            <nav className="px-1 pb-2">
+            <nav className="px-1 pb-2 pt-3">
               {areas.length === 0 ? (
                 <div className="px-2 py-8 text-center text-13 text-muted-foreground">
                   <p className="mb-3">No areas</p>
@@ -251,39 +352,37 @@ export default function App() {
                   </Button>
                 </div>
               ) : (
-                areas.map((a) => (
-                  <button
-                    key={a.id}
-                    type="button"
-                    className={cn(
-                      'mb-px flex w-full cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-left text-13 transition-colors',
-                      selectedAreaId === a.id
-                        ? 'bg-accent text-foreground'
-                        : 'text-muted-foreground hover:bg-accent/80 hover:text-foreground',
-                    )}
-                    onClick={() => selectArea(a.id)}
-                  >
-                    <AreaProgressIcon
-                      area={a}
-                      progress={
-                        areaProgress[a.id] ?? {
-                          total: 0,
-                          completed: 0,
-                          ratio: 0,
-                        }
-                      }
-                    />
-                    <InlineRename
-                      value={a.name}
-                      aria-label={`Rename area ${a.name}`}
-                      className="flex-1"
-                      onSave={async (name) => {
-                        await api.updateArea(a.id, { name });
+                <>
+                  {inbox ? renderAreaRow(inbox) : null}
+                  {renderAreaRow(todayArea, { readonly: true })}
+
+                  <div className="mt-1 flex h-7 items-center justify-between px-2">
+                    <span className="text-12 text-muted-foreground">
+                      Areas
+                    </span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-xs"
+                      className="text-muted-foreground"
+                      aria-label="New area"
+                      onClick={async () => {
+                        const a = await api.createArea('New Area');
                         setAreas(await api.listAreas());
+                        selectArea(a.id);
                       }}
-                    />
-                  </button>
-                ))
+                    >
+                      <IconPlusSmall className="size-3.5" ariaHidden />
+                    </Button>
+                  </div>
+                  {userAreas.length === 0 ? (
+                    <p className="px-2 pb-1 text-12 text-muted-foreground">
+                      No areas yet
+                    </p>
+                  ) : (
+                    userAreas.map((a) => renderAreaRow(a))
+                  )}
+                </>
               )}
             </nav>
           </ScrollArea>
@@ -303,10 +402,20 @@ export default function App() {
               <IconSettingsGear1 className="size-3.5" ariaHidden />
             </Button>
           </div>
-        </aside>
+            </ResizablePanel>
 
-        {/* Center: outline (Bike) */}
-        <section className="main-outline">
+            <ResizableHandle
+              className="app-resize-handle"
+              onDoubleClick={resetPanelLayout}
+            />
+
+            <ResizablePanel
+              id="surface"
+              order={2}
+              defaultSize={panelLayout[1] ?? DEFAULT_PANEL_LAYOUT[1]}
+              minSize={25}
+              className="main-surface"
+            >
           <ScrollArea className="flex-1">
             {selectedAreaId ? (
               <OutlineTree
@@ -316,17 +425,36 @@ export default function App() {
                 refreshKey={refreshKey}
                 runningPointIds={runningPointIds}
                 onPointsChanged={refresh}
+                mode={isTodayView(selectedAreaId) ? 'today' : 'area'}
+                since={
+                  isTodayView(selectedAreaId) ? todaySince : undefined
+                }
+                areaNames={areaNames}
+                onGoToPoint={
+                  isTodayView(selectedAreaId) ? goToPointInArea : undefined
+                }
               />
             ) : (
-              <p className="px-4 py-12 text-center text-13 text-muted-foreground">
+              <p className="px-3 py-12 text-center text-13 text-muted-foreground">
                 Select an area
               </p>
             )}
           </ScrollArea>
-        </section>
+            </ResizablePanel>
 
-        {/* Right: task detail (Linear issue panel) */}
-        <aside className="sidebar-right">
+            <ResizableHandle
+              className="app-resize-handle"
+              onDoubleClick={resetPanelLayout}
+            />
+
+            <ResizablePanel
+              id="detail"
+              order={3}
+              defaultSize={panelLayout[2] ?? DEFAULT_PANEL_LAYOUT[2]}
+              minSize={20}
+              maxSize={45}
+              className="app-gutter app-gutter-right"
+            >
           {selectedArea ? (
             selectedPointId ? (
               <PointDetail
@@ -344,22 +472,26 @@ export default function App() {
                 <div className="border-b border-border px-4 py-3">
                   <h2 className="text-16 font-medium">{selectedArea.name}</h2>
                   <p className="mt-1 text-13 text-muted-foreground">
-                    Select a task in the outline
+                    {isTodayView(selectedAreaId)
+                      ? 'Tasks you worked on today'
+                      : 'Select a task in the outline'}
                   </p>
                 </div>
-                <div className="flex-1 p-4">
-                  <label className="text-12 text-muted-foreground">
-                    Area context
-                  </label>
-                  <Textarea
-                    className="mt-1.5 min-h-[120px] resize-none border-border bg-transparent text-14 shadow-none focus-visible:ring-1"
-                    value={areaDescription}
-                    onChange={(e) => setAreaDescription(e.target.value)}
-                    onBlur={saveAreaDescription}
-                    rows={5}
-                    placeholder="Shared human/agent context"
-                  />
-                </div>
+                {!isTodayView(selectedAreaId) ? (
+                  <div className="flex-1 p-4">
+                    <label className="text-12 text-muted-foreground">
+                      Area context
+                    </label>
+                    <Textarea
+                      className="mt-1.5 min-h-[120px] resize-none border-border bg-transparent text-14 shadow-none focus-visible:ring-1"
+                      value={areaDescription}
+                      onChange={(e) => setAreaDescription(e.target.value)}
+                      onBlur={saveAreaDescription}
+                      rows={5}
+                      placeholder="Shared human/agent context"
+                    />
+                  </div>
+                ) : null}
               </div>
             )
           ) : (
@@ -370,13 +502,14 @@ export default function App() {
               </p>
             </div>
           )}
-        </aside>
+            </ResizablePanel>
+          </ResizablePanelGroup>
         </div>
       </div>
 
-      {showCreator && selectedAreaId ? (
+      {showCreator && creatorAreaId ? (
         <TaskCreator
-          areaId={selectedAreaId}
+          areaId={creatorAreaId}
           parentId={selectedPointId}
           onCreated={(id) => {
             refresh();
@@ -386,9 +519,9 @@ export default function App() {
         />
       ) : null}
 
-      {showFirstRun && selectedAreaId ? (
+      {showFirstRun && creatorAreaId && !isTodayView(selectedAreaId) ? (
         <FirstRunWizard
-          areaId={selectedAreaId}
+          areaId={creatorAreaId}
           onDone={(id) => {
             localStorage.setItem('liner:first-run-dismissed', '1');
             setShowFirstRun(false);

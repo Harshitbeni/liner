@@ -5,6 +5,15 @@ type SseWriter = (chunk: string) => void;
 const listenersByPoint = new Map<string, Set<SseWriter>>();
 const sessionUnsubs = new Map<string, () => void>();
 
+let touchPointOnMessage: ((pointId: string, message: ThreadMessage) => void) | null =
+  null;
+
+export function configurePointActivity(
+  handler: (pointId: string, message: ThreadMessage) => void,
+): void {
+  touchPointOnMessage = handler;
+}
+
 export function subscribePointSse(
   pointId: string,
   write: SseWriter,
@@ -25,6 +34,9 @@ export function broadcastPointMessage(
   pointId: string,
   message: ThreadMessage,
 ): void {
+  if (touchPointOnMessage && message.meta?.streaming !== true) {
+    touchPointOnMessage(pointId, message);
+  }
   const payload = `data: ${JSON.stringify({ type: 'message', message })}\n\n`;
   for (const write of listenersByPoint.get(pointId) ?? []) {
     try {

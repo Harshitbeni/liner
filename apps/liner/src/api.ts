@@ -148,6 +148,10 @@ export const api = {
     }
     return request<Point[]>(`/points?${params}`);
   },
+  listTodayPoints: (since: string) => {
+    const params = new URLSearchParams({ since });
+    return request<Point[]>(`/points/today?${params}`);
+  },
   getPoint: (id: string) =>
     request<{ point: Point; children: Point[] }>(`/points/${id}`),
   createPoint: (input: {

@@ -21,6 +21,17 @@ const STATE_ICONS: Record<PointState, ComponentType<CentralIconBaseProps>> = {
   cancelled: IconCircleX,
 };
 
+const STATE_ICON_COLORS: Record<PointState, string> = {
+  backlog: 'text-neutral-400',
+  todo: 'text-muted-foreground',
+  'needs-review': 'text-yellow-600',
+  'in-progress': 'text-green-600',
+  waiting: 'text-yellow-600',
+  done: 'text-green-600',
+  shipped: 'text-blue-600',
+  cancelled: 'text-neutral-400',
+};
+
 export function formatStateLabel(state: PointState) {
   return state.replace(/-/g, ' ');
 }
@@ -39,18 +50,34 @@ export function StateIcon({
     <Icon
       size={size}
       ariaHidden
-      className={cn('shrink-0 text-muted-foreground', className)}
+      className={cn('shrink-0', STATE_ICON_COLORS[state], className)}
     />
   );
 }
 
 export function StateBadge({
   state,
+  iconOnly = false,
   className,
 }: {
   state: PointState;
+  iconOnly?: boolean;
   className?: string;
 }) {
+  const label = formatStateLabel(state);
+
+  if (iconOnly) {
+    return (
+      <span
+        className={cn('inline-flex size-5 shrink-0 items-center justify-center', className)}
+        title={label}
+        aria-label={label}
+      >
+        <StateIcon state={state} size={14} />
+      </span>
+    );
+  }
+
   return (
     <span
       className={cn(
@@ -59,7 +86,7 @@ export function StateBadge({
       )}
     >
       <StateIcon state={state} />
-      {formatStateLabel(state)}
+      {label}
     </span>
   );
 }
