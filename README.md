@@ -2,7 +2,7 @@
 
 Personal agent outliner powered by [OpenCode](https://github.com/anomalyco/opencode) as the local coding-agent engine.
 
-Nested points with uniform schema, comments-first threads (one Craft session per point), and a two-phase parent harness (plan review + completion verification).
+Nested points with uniform schema, comments-first threads (one agent session per point), and a two-phase parent harness (plan review + completion verification).
 
 ## Structure
 
@@ -11,39 +11,40 @@ Nested points with uniform schema, comments-first threads (one Craft session per
 | `packages/liner-core` | SQLite store, types, state machine, harness, mentions, RPC adapter |
 | `apps/liner-server` | Bun HTTP API + SSE (used by UI + Electron) |
 | `apps/liner` | React outline UI (Vite) |
-| `apps/liner-electron` | Electron shell — bundled AI engine + API + UI |
-| `vendor/craft-agents-oss` | Git submodule (agent runtime) |
+| `apps/liner-electron` | Electron shell — bundled OpenCode engine + API + UI |
 
 ## Prerequisites
 
 - [Bun](https://bun.sh) 1.1+
-- Git submodules initialized
 - For desktop builds: Bun on PATH (or `bun run prepare:runtime` to bundle Bun into the `.app`)
-- For bundled engine: Craft submodule deps installed (`cd vendor/craft-agents-oss && bun install`)
+- For bundled engine: run `bun run build:engine` before `build:desktop:bundled`
 
 ## Setup
 
 ```bash
-git submodule update --init --recursive
 bun install
 ```
 
-### Craft agents (AI Engine)
+### OpenCode (AI Engine)
 
-The Liner API **starts the Craft engine automatically** on `ws://127.0.0.1:9100` (managed engine). No separate terminal for `craft:server` in normal use.
+The Liner API **starts OpenCode automatically** on `http://127.0.0.1:4096` when managed engine is enabled. See [docs/ENGINE.md](docs/ENGINE.md).
 
 ```bash
-# One command — API spawns Craft, then UI
-cd vendor/craft-agents-oss && bun install && cd ../..   # first time only
+# Dev default: mock RPC (no engine spawn)
 bun run dev
 
-# Optional sanity check (API must be running)
+# Live engine: API spawns OpenCode when managed
+LINER_RPC_MODE=opencode LINER_MANAGED_ENGINE=1 bun run dev:api
+# in another terminal:
+bun run dev:ui
+
+# Optional sanity check (API must be running with managed engine)
 bun run dev:check
 ```
 
-`craft:smoke` / **Verify Engine** exit codes: **0** = Craft connected; **2** = mock-only; **1** = failure.
+**Verify Engine** exit codes: **0** = OpenCode connected; **2** = mock-only; **1** = failure.
 
-Advanced: `bun run craft:server` runs the engine alone (debug). Force demo mode: `LINER_RPC_MODE=mock LINER_MANAGED_ENGINE=0 bun run dev`.
+Force demo mode: `LINER_RPC_MODE=mock LINER_MANAGED_ENGINE=0 bun run dev`.
 
 ## Run
 
@@ -57,7 +58,7 @@ bun run dev:api
 # UI only (needs API)
 bun run dev:ui
 
-# Electron desktop (API starts Craft + Vite dev — one command)
+# Electron desktop (API + Vite dev — one command)
 bun run dev:electron
 
 # Full stack: API + UI + Electron window
@@ -72,11 +73,11 @@ bun run dev:all
 
 See [docs/DOGFOOD.md](docs/DOGFOOD.md). Summary:
 
-1. **AI Engine proof:** Any entry path → Settings → **AI Engine** → **Verify Engine** (exit 0). Dev: `bun run dev` then `bun run dev:check` or health shows `"rpc":"craft"`.
+1. **AI Engine proof:** Any entry path → Settings → **AI Engine** → **Verify Engine** (exit 0). Dev: managed engine + `bun run dev:check` or health shows `"rpc":"opencode"`.
 2. **Auto workflow:** Settings → **Auto-run agents on state changes** (default on). Promote backlog → **todo** with empty plan → agent writes plan. Approve → **in-progress** → agent executes. Confirm **◉** indicator on outline row while running.
 3. **Thread UX:** Open a point → send a message → watch **streaming** text in the agent card; expand **Tools** blocks; approve/deny **permission** prompts inline.
 4. **Ship path:** Child **done** → parent harness → **shipped** on parent when children terminal.
-5. **Desktop:** `bun run build:desktop:bundled` → open `.app` from Finder — bundled Craft engine, no extra terminals.
+5. **Desktop:** `bun run build:desktop:bundled` → open `.app` from Finder — bundled OpenCode engine, no extra terminals.
 
 ### Dogfood UX
 
@@ -115,16 +116,14 @@ Manual overrides: **Write plan / Execute / Review** in point detail, or `POST /a
 | `bun run verify:engine` | Probe OpenCode RPC + session smoke test |
 | `bun run typecheck` | Typecheck all packages |
 | `bun test` | Run liner-core tests (state machine, mentions, harness) |
-| `bun run verify:craft` | Alias for `verify:engine` (legacy name) |
 | `POST /api/verify-engine` | In-app engine verification (exit code + message) |
-| `bun test` | liner-core unit tests |
 | `bun run test:e2e` | Playwright smoke (starts API+UI with mock RPC) |
 
 ## CI and E2E
 
 GitHub Actions (`.github/workflows/ci.yml`) runs on every push/PR:
 
-- `bun test`, `bun run typecheck`, `bun run build` (no Craft required)
+- `bun test`, `bun run typecheck`, `bun run build` (no OpenCode required)
 - Playwright smoke with `LINER_RPC_MODE=mock`
 
 Locally:
@@ -142,14 +141,14 @@ Dogfood notes: [docs/DOGFOOD.md](docs/DOGFOOD.md).
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `LINER_API_PORT` | `9240` | Liner HTTP API port |
-| `LINER_RPC_MODE` | `craft` (managed) | `craft`, `mock` — mock disables managed engine |
-| `LINER_MANAGED_ENGINE` | `1` | Set `0` to skip auto-starting Craft (CI / Playwright) |
-| `CRAFT_RPC_PORT` | `9100` | Craft WebSocket RPC |
-| `CRAFT_SERVER_TOKEN` | — | Bearer token if Craft requires auth |
+| `LINER_RPC_MODE` | `opencode` (managed) | `opencode`, `mock` — mock disables managed engine |
+| `LINER_MANAGED_ENGINE` | `1` | Set `0` to skip auto-starting OpenCode (CI / Playwright) |
+| `OPENCODE_PORT` | `4096` | OpenCode HTTP listen port |
+| `OPENCODE_BASE_URL` | `http://127.0.0.1:4096` | OpenCode HTTP API |
 | `VITE_LINER_API` | `http://127.0.0.1:9240/api` | UI API base URL |
 | `LINER_UI_URL` | `http://127.0.0.1:5180` | Electron dev UI URL |
 | `LINER_WORKSPACE_ID` | `default` | SQLite workspace under `~/.liner/workspaces/` |
-| `CRAFT_SKIP` | — | Set to `1` to skip `verify:craft` |
+| `ENGINE_SKIP` | — | Set to `1` to skip `verify:engine` |
 
 ## Desktop install (production build)
 
@@ -162,7 +161,7 @@ Artifacts under `apps/liner-electron/release/`:
 - **macOS:** `Liner.app`, `Liner-x.x.x.dmg`
 - **Linux / Windows:** `dir` or installer targets per platform
 
-The packaged app loads UI from `resources/liner-ui`, starts the **bundled AI engine** from `resources/craft-engine`, and runs the Liner API with `resources/runtime/bun` (or system Bun). See [docs/ENGINE.md](docs/ENGINE.md).
+The packaged app loads UI from `resources/liner-ui`, starts the **bundled OpenCode engine** from `resources/opencode-engine`, and runs the Liner API with `resources/runtime/bun` (or system Bun). See [docs/ENGINE.md](docs/ENGINE.md).
 
 ```bash
 bun run build:desktop:bundled
@@ -170,7 +169,7 @@ open apps/liner-electron/release/mac-arm64/Liner.app
 bun run smoke:packaged
 ```
 
-**Provider keys:** Configure LLM credentials in Craft workspace config (`~/.craft-agent/...`) — Liner does not store API keys. **Verify Engine** in Settings confirms RPC; exit **2** usually means engine down or credentials missing.
+**Provider keys:** Configure LLM credentials in **Settings → AI Provider** (`~/.liner/auth.json`). **Verify Engine** confirms RPC; exit **2** usually means engine down or credentials missing.
 
 **macOS without bundled Bun:** Run `bun run prepare:runtime` before packaging, or install Bun globally if the API fails to start.
 
@@ -205,8 +204,8 @@ Release notes: [CHANGELOG.md](CHANGELOG.md).
 ## Manual steps (AI Engine)
 
 1. **First run:** `bun install` at repo root.
-2. **Bundled build:** `cd vendor/craft-agents-oss && bun install` then `bun run build:engine` (can take several minutes).
-3. **LLM credentials:** Configure Craft workspace model/API keys in craft-agents — Liner does not store provider keys.
+2. **Bundled build:** `bun run build:engine` then `bun run build:desktop:bundled`.
+3. **LLM credentials:** Settings → **AI Provider** (stored in `~/.liner/auth.json`).
 4. **Verify:** `bun run verify:engine` or Settings → **AI Engine** → **Verify Engine**.
 
 ## Design

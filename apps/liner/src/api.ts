@@ -64,8 +64,6 @@ export type HealthResponse = {
   rpc: string;
   connected: boolean;
   engineReachable?: boolean;
-  /** @deprecated use engineReachable */
-  craftReachable?: boolean;
   lastError: string | null;
   workspaceId?: string;
   engine?: EngineHealth;
@@ -146,8 +144,6 @@ export const api = {
   health: () => request<HealthResponse>('/health'),
   verifyEngine: () =>
     request<VerifyEngineResponse>('/verify-engine', { method: 'POST' }),
-  verifyCraft: () =>
-    request<VerifyEngineResponse>('/verify-craft', { method: 'POST' }),
   getProviderConfig: () => request<ProviderConfigResponse>('/provider'),
   saveProviderConfig: (body: {
     providerId: string;

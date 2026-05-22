@@ -10,7 +10,6 @@ export * from './session-context';
 export * from './agent-prompts';
 export * from './skills';
 export * from './verify-engine';
-export * from './verify-craft';
 export * from './provider-auth';
 export * from './workspaces';
 export * from './engine-info';

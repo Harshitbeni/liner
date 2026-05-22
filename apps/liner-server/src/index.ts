@@ -103,7 +103,6 @@ async function buildHealthLight(): Promise<{
   rpc: string;
   connected: boolean;
   engineReachable: boolean;
-  craftReachable: boolean;
   lastError: string | null;
   workspaceId: string;
   engine: ReturnType<typeof getEngineInfo>;
@@ -128,7 +127,6 @@ async function buildHealthLight(): Promise<{
     rpc: rpcMode,
     connected: false,
     engineReachable,
-    craftReachable: engineReachable,
     lastError,
     workspaceId: activeWorkspaceId,
     engine,
@@ -197,7 +195,6 @@ async function buildHealth(rt: Awaited<ReturnType<typeof getRuntime>>) {
     rpc: rpc.mode,
     connected,
     engineReachable,
-    craftReachable: engineReachable,
     lastError,
     workspaceId: store.workspaceId,
     engine,
@@ -373,10 +370,7 @@ try {
         const rt = await getRuntime();
         const { store, rpc, harness } = rt;
 
-        if (
-          (path === '/verify-engine' || path === '/verify-craft') &&
-          req.method === 'POST'
-        ) {
+        if (path === '/verify-engine' && req.method === 'POST') {
           await ensureEngineBoot();
           const rtForVerify = await getRuntime();
           const settings = rtForVerify.store.getSettings();
@@ -396,8 +390,7 @@ try {
           const result = await verifyEngineConnection({
             opencodeBaseUrl: freshSettings.opencodeBaseUrl,
             forceOpencode: process.env.LINER_RPC_MODE === 'opencode',
-            skip:
-              process.env.ENGINE_SKIP === '1' || process.env.CRAFT_SKIP === '1',
+            skip: process.env.ENGINE_SKIP === '1',
           });
           return json(result);
         }

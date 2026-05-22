@@ -2,6 +2,19 @@
 
 All notable changes to Liner are documented here.
 
+## [Unreleased]
+
+### Changed
+
+- **AI engine:** Bundled runtime is OpenCode (`opencode-engine` on port 4096), replacing Craft Agents (`craft-engine` / WebSocket 9100).
+- **API:** Health uses `engineReachable` only; removed `craftReachable`, `/api/verify-craft`, `verify:craft`, and `CRAFT_SKIP`.
+- **Docs:** README, DOGFOOD, and launch scripts aligned with OpenCode; design doc marked superseded for engine details.
+
+### Removed
+
+- Legacy Craft compatibility shims (`verify-craft.ts`, `scripts/verify-craft.ts`).
+- Local `craft-engine-test` artifact path (gitignored).
+
 ## [0.3.0] — 2026-05-20
 
 ### Added

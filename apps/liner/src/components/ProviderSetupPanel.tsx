@@ -104,7 +104,7 @@ export function ProviderSetupPanel({ health, onHealthRefresh }: Props) {
   };
 
   const reachable =
-    health?.engineReachable ?? health?.craftReachable ?? false;
+    health?.engineReachable ?? false;
 
   return (
     <div className="space-y-4">

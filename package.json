@@ -32,7 +32,6 @@
     "typecheck:ui": "cd apps/liner && bun run typecheck",
     "typecheck:electron": "cd apps/liner-electron && bun run typecheck",
     "test": "cd packages/liner-core && bun test",
-    "verify:craft": "bun scripts/verify-engine.ts",
     "pretest:e2e": "bun scripts/free-dev-ports.ts",
     "test:e2e": "playwright test"
   },

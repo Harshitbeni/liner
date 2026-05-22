@@ -346,7 +346,7 @@ export default function App() {
   const showRpcBanner =
     health &&
     (health.rpc === 'mock' ||
-      !health.craftReachable ||
+      !health.engineReachable ||
       health.engine?.state === 'failed' ||
       health.engine?.state === 'mock-fallback');
 
@@ -368,11 +368,11 @@ export default function App() {
                   ? 'Demo mode — Settings → AI Engine'
                   : 'AI engine not ready'
               : health!.rpc === 'mock'
-                ? 'Mock RPC — demo mode (set LINER_RPC_MODE=craft for live agents)'
+                ? 'Mock RPC — demo mode (set LINER_RPC_MODE=opencode for live agents)'
                 : health!.engine?.state === 'failed' ||
                     health!.engine?.state === 'unavailable'
                   ? 'AI engine failed — Settings → AI Engine'
-                  : 'Craft unreachable'}
+                  : 'AI engine unreachable'}
             {health!.lastError ? (
               <span className="rpc-banner-detail"> ({health!.lastError})</span>
             ) : null}

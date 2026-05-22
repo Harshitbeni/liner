@@ -10,7 +10,6 @@ async function main(): Promise<void> {
     ok?: boolean;
     rpc?: string;
     engineReachable?: boolean;
-    craftReachable?: boolean;
     engine?: { state?: string; error?: string | null };
     lastError?: string | null;
   };
@@ -35,7 +34,7 @@ async function main(): Promise<void> {
   if (health.rpc === 'mock') {
     issues.push('RPC mode is mock (expected opencode for managed dev)');
   }
-  const reachable = health.engineReachable ?? health.craftReachable;
+  const reachable = health.engineReachable;
   if (!reachable) {
     issues.push('OpenCode engine not reachable');
   }

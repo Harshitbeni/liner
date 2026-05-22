@@ -21,7 +21,7 @@ export async function verifyEngineConnection(options?: {
   forceOpencode?: boolean;
   skip?: boolean;
 }): Promise<VerifyEngineResult> {
-  if (options?.skip || process.env.ENGINE_SKIP === '1' || process.env.CRAFT_SKIP === '1') {
+  if (options?.skip || process.env.ENGINE_SKIP === '1') {
     return {
       exitCode: 0,
       ok: true,

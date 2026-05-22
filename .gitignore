@@ -8,6 +8,7 @@ dist/
 apps/liner-electron/dist/
 apps/liner-electron/release/
 apps/liner-electron/build/craft-engine/
+apps/liner-electron/build/craft-engine-test/
 apps/liner-electron/build/liner-server/
 apps/liner-electron/build/runtime/bun
 test-results/

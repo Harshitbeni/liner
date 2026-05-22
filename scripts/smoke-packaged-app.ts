@@ -25,7 +25,7 @@ async function main(): Promise<void> {
   let health: {
     ok?: boolean;
     rpc?: string;
-    craftReachable?: boolean;
+    engineReachable?: boolean;
     engine?: { state?: string; version?: string; error?: string | null };
     lastError?: string | null;
   };

@@ -1,5 +1,7 @@
 # Liner — Outline-First Agent Task System
 
+> **Superseded (engine):** The agent runtime is now [OpenCode](https://github.com/anomalyco/opencode), not `craft-agents-oss`. See [docs/ENGINE.md](../ENGINE.md). This document remains as historical product/design context.
+
 ## Product thesis
 
 **Liner** is a **personal agent outliner** (not Linear parity): unlimited nested points, identical attributes on every node, one **comments-first thread** per point, and a **harness** that coordinates parent/child agents.
