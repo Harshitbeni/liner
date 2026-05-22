@@ -67,6 +67,70 @@ function findPoint(
   return undefined;
 }
 
+function collectVisibleSubtreeIds(
+  pointId: string,
+  visibleRows: VisibleRow[],
+): string[] {
+  const startIdx = visibleRows.findIndex((r) => r.point.id === pointId);
+  if (startIdx < 0) return [];
+  const startDepth = visibleRows[startIdx].depth;
+  const ids: string[] = [];
+  for (let i = startIdx; i < visibleRows.length; i++) {
+    const row = visibleRows[i];
+    if (i > startIdx && row.depth <= startDepth) break;
+    ids.push(row.point.id);
+  }
+  return ids;
+}
+
+function patchChildrenMapAfterMove(
+  moved: Point,
+  pointId: string,
+  oldParentId: string | null,
+  parentId: string | null,
+  afterId: string | null | undefined,
+  roots: Point[],
+  childrenMap: Record<string, Point[]>,
+): { roots: Point[]; childrenMap: Record<string, Point[]> } {
+  const nextMap = { ...childrenMap };
+
+  if (oldParentId) {
+    const oldKids = nextMap[oldParentId];
+    if (oldKids) {
+      nextMap[oldParentId] = oldKids.filter((c) => c.id !== pointId);
+    }
+  }
+
+  let nextRoots = roots;
+  if (oldParentId === null) {
+    nextRoots = roots.filter((p) => p.id !== pointId);
+  }
+
+  if (parentId === null) {
+    const list = [...nextRoots].filter((p) => p.id !== pointId);
+    if (afterId != null) {
+      const idx = list.findIndex((p) => p.id === afterId);
+      const at = idx < 0 ? list.length : idx + 1;
+      list.splice(at, 0, moved);
+    } else {
+      list.push(moved);
+    }
+    nextRoots = list;
+  } else {
+    const siblings = [...(nextMap[parentId] ?? [])].filter((c) => c.id !== pointId);
+    if (afterId != null) {
+      const idx = siblings.findIndex((c) => c.id === afterId);
+      const at = idx < 0 ? siblings.length : idx + 1;
+      siblings.splice(at, 0, moved);
+    } else {
+      siblings.push(moved);
+    }
+    nextMap[parentId] = siblings;
+  }
+
+  return { roots: nextRoots, childrenMap: nextMap };
+}
+
 function collectDescendantIds(
   pointId: string,
   roots: Point[],
@@ -228,10 +292,14 @@ export function OutlineTree({
     }
     api.listPoints(areaId, null).then((list) => {
       setRoots(list);
-      setChildrenMap({});
-      setTouchedIds(new Set());
     });
   }, [areaId, isToday, since]);
+
+  React.useEffect(() => {
+    setChildrenMap({});
+    setCollapsed(new Set());
+    setTouchedIds(new Set());
+  }, [areaId]);
 
   React.useEffect(() => {
     reloadRoots();
@@ -279,6 +347,7 @@ export function OutlineTree({
       afterId: string | null | undefined,
       expandIds: string[],
       oldParentId: string | null,
+      preserveExpandedIds: string[] = [],
     ) => {
       const idsToExpand = expandIds.filter((id) => {
         const point = findPoint(id, roots, childrenMap);
@@ -290,15 +359,20 @@ export function OutlineTree({
         return isRowCollapsed(id, hasChildren);
       });
 
-      await api.movePoint(pointId, { parentId, afterId });
-
-      for (const id of idsToExpand) {
+      if (idsToExpand.length > 0) {
         setCollapsed((prev) => {
           const next = new Set(prev);
-          next.delete(id);
+          for (const id of idsToExpand) next.delete(id);
           return next;
         });
+        if (!isToday) {
+          for (const id of idsToExpand) {
+            if (!childrenMap[id]) void loadChildren(id);
+          }
+        }
       }
+
+      const moved = await api.movePoint(pointId, { parentId, afterId });
 
       if (isToday && since) {
         const tree = await loadTodayTree(since);
@@ -306,35 +380,35 @@ export function OutlineTree({
         setChildrenMap(tree.childrenMap);
         setTouchedIds(tree.touchedIds);
       } else {
-        if (oldParentId === null || parentId === null) {
-          const list = await api.listPoints(areaId, null);
-          setRoots(list);
+        const patched = patchChildrenMapAfterMove(
+          moved,
+          pointId,
+          oldParentId,
+          parentId,
+          afterId,
+          roots,
+          childrenMap,
+        );
+        setRoots(patched.roots);
+        setChildrenMap(patched.childrenMap);
+
+        if (preserveExpandedIds.length > 0) {
+          setCollapsed((prev) => {
+            const next = new Set(prev);
+            for (const id of preserveExpandedIds) next.delete(id);
+            return next;
+          });
         }
+
         const parentsToReload = new Set<string>();
         if (parentId) parentsToReload.add(parentId);
         if (oldParentId) parentsToReload.add(oldParentId);
-        await Promise.all(
-          [...parentsToReload].map((id) => loadChildren(id)),
-        );
-        for (const id of idsToExpand) {
-          if (!childrenMap[id]) await loadChildren(id);
-        }
+        void Promise.all([...parentsToReload].map((id) => loadChildren(id)));
       }
 
       onSelect(pointId);
-      onPointsChanged?.();
     },
-    [
-      roots,
-      childrenMap,
-      collapsed,
-      isToday,
-      since,
-      areaId,
-      loadChildren,
-      onSelect,
-      onPointsChanged,
-    ],
+    [roots, childrenMap, collapsed, isToday, since, areaId, loadChildren, onSelect],
   );
 
   const toggleCollapse = (
@@ -493,12 +567,17 @@ export function OutlineTree({
         if (sibIdx <= 0) return;
         e.preventDefault();
         const prevSibling = row.siblings[sibIdx - 1];
+        const preserveExpandedIds = collectVisibleSubtreeIds(
+          row.point.id,
+          visibleRows,
+        );
         void applyMove(
           row.point.id,
           prevSibling.id,
           undefined,
           [prevSibling.id],
           row.parentId,
+          preserveExpandedIds,
         );
         return;
       }
@@ -506,6 +585,10 @@ export function OutlineTree({
       if (e.key === 'Tab' && e.shiftKey) {
         if (!row.parentId) return;
         e.preventDefault();
+        const preserveExpandedIds = collectVisibleSubtreeIds(
+          row.point.id,
+          visibleRows,
+        );
         void (async () => {
           const { point: parent } = await api.getPoint(row.parentId!);
           await applyMove(
@@ -514,6 +597,7 @@ export function OutlineTree({
             parent.id,
             [parent.id, ...(parent.parentId ? [parent.parentId] : [])],
             row.parentId,
+            preserveExpandedIds,
           );
         })();
       }
