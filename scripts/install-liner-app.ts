@@ -15,13 +15,17 @@ import {
   rmSync,
   cpSync,
   chmodSync,
+  statSync,
   writeFileSync,
 } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { $ } from 'bun';
 
 const REPO_ROOT = join(import.meta.dir, '..');
 const ELECTRON_RELEASE = join(REPO_ROOT, 'apps', 'liner-electron', 'release');
+const USE_SUDO =
+  process.env.LINER_INSTALL_SUDO === '1' ||
+  (process.env.LINER_INSTALL_SUDO !== '0' && process.getuid?.() !== 0);
 
 function fail(msg: string): never {
   console.error(`[install:desktop] ${msg}`);
@@ -48,22 +52,46 @@ function findMacApp(): string {
   );
 }
 
-function findLinuxUnpacked(): string {
+function findLinuxExecInDir(dir: string): string | null {
+  if (!existsSync(dir)) return null;
+  const known = ['liner', 'liner-electron', '@linerelectron', 'Liner'];
+  for (const name of known) {
+    const path = join(dir, name);
+    try {
+      if (existsSync(path) && (statSync(path).mode & 0o111) !== 0) return path;
+    } catch {
+      /* ignore */
+    }
+  }
+  for (const name of readdirSync(dir)) {
+    const path = join(dir, name);
+    if (name.endsWith('.so') || name.endsWith('.pak') || name.includes('.')) continue;
+    try {
+      if ((statSync(path).mode & 0o111) !== 0) return path;
+    } catch {
+      /* ignore */
+    }
+  }
+  return null;
+}
+
+function findLinuxUnpacked(): { dir: string; exec: string } {
   const candidates = [
     join(ELECTRON_RELEASE, 'linux-unpacked'),
     join(ELECTRON_RELEASE, `linux${process.arch === 'arm64' ? '-arm64' : ''}-unpacked`),
   ];
-  for (const p of candidates) {
-    if (existsSync(join(p, 'liner'))) return p;
-    if (existsSync(join(p, 'liner-electron'))) return p;
+  for (const dir of candidates) {
+    const exec = findLinuxExecInDir(dir);
+    if (exec) return { dir, exec };
   }
-  const releaseDir = ELECTRON_RELEASE;
-  if (!existsSync(releaseDir)) {
-    fail(`Release dir missing: ${releaseDir}. Run \`bun run build:desktop:bundled\` first.`);
+  if (!existsSync(ELECTRON_RELEASE)) {
+    fail(`Release dir missing: ${ELECTRON_RELEASE}. Run \`bun run build:desktop:bundled\` first.`);
   }
-  for (const name of readdirSync(releaseDir)) {
-    const dir = join(releaseDir, name);
-    if (name.includes('unpacked') && existsSync(join(dir, 'liner'))) return dir;
+  for (const name of readdirSync(ELECTRON_RELEASE)) {
+    if (!name.includes('unpacked')) continue;
+    const dir = join(ELECTRON_RELEASE, name);
+    const exec = findLinuxExecInDir(dir);
+    if (exec) return { dir, exec };
   }
   fail(
     `Linux unpacked app not found under ${ELECTRON_RELEASE}. Run \`bun run build:desktop:bundled\` first.`,
@@ -79,45 +107,72 @@ async function buildIfNeeded(): Promise<void> {
   await $`bun run build:desktop:bundled`.cwd(REPO_ROOT);
 }
 
-function installMac(source: string): void {
-  const dest = '/Applications/Liner.app';
+async function installMac(source: string): Promise<void> {
+  const dest = process.env.LINER_INSTALL_DIR ?? '/Applications/Liner.app';
   console.log(`[install:desktop] Installing ${source} → ${dest}`);
-  if (existsSync(dest)) {
-    rmSync(dest, { recursive: true, force: true });
+  if (USE_SUDO && process.getuid?.() !== 0) {
+    awaitRemoveAndCopySudo(source, dest);
+  } else {
+    if (existsSync(dest)) rmSync(dest, { recursive: true, force: true });
+    cpSync(source, dest, { recursive: true });
   }
-  cpSync(source, dest, { recursive: true });
   console.log(`[install:desktop] Installed Liner.app to ${dest}`);
 }
 
-function installLinux(source: string): void {
-  const optDest = '/opt/Liner';
-  const desktopDir = '/usr/local/share/applications';
+async function awaitRemoveAndCopySudo(source: string, dest: string): Promise<void> {
+  if (existsSync(dest)) {
+    await $`sudo rm -rf ${dest}`.quiet();
+  }
+  const parent = dest.replace(/\/[^/]+$/, '');
+  await $`sudo mkdir -p ${parent}`.quiet();
+  await $`sudo cp -R ${source} ${dest}`.quiet();
+  await $`sudo chmod -R a+rX ${dest}`.quiet();
+}
+
+async function installLinux(sourceDir: string, sourceExec: string): Promise<void> {
+  const optDest = process.env.LINER_INSTALL_DIR ?? '/opt/Liner';
+  const desktopDir =
+    process.env.LINER_DESKTOP_DIR ?? '/usr/local/share/applications';
   const desktopFile = join(desktopDir, 'liner.desktop');
+  const execName = sourceExec.split('/').pop() ?? 'liner';
+  const installedExec = join(optDest, execName);
 
-  console.log(`[install:desktop] Installing ${source} → ${optDest}`);
-  if (existsSync(optDest)) {
-    rmSync(optDest, { recursive: true, force: true });
-  }
-  mkdirSync('/opt', { recursive: true });
-  cpSync(source, optDest, { recursive: true });
+  console.log(`[install:desktop] Installing ${sourceDir} → ${optDest}`);
 
-  const exec = join(optDest, 'liner');
-  if (!existsSync(exec)) {
-    fail(`Expected executable at ${exec}`);
-  }
-  chmodSync(exec, 0o755);
-
-  mkdirSync(desktopDir, { recursive: true });
   const desktop = `[Desktop Entry]
 Name=Liner
 Comment=Liner desktop app
-Exec=${exec} %U
+Exec=${installedExec} %U
 Terminal=false
 Type=Application
 Categories=Office;Productivity;
 StartupWMClass=liner
 `;
-  writeFileSync(desktopFile, desktop, 'utf8');
+
+  try {
+    if (existsSync(optDest)) rmSync(optDest, { recursive: true, force: true });
+    mkdirSync(dirname(optDest), { recursive: true });
+    cpSync(sourceDir, optDest, { recursive: true });
+    chmodSync(installedExec, 0o755);
+    mkdirSync(desktopDir, { recursive: true });
+    writeFileSync(desktopFile, desktop, 'utf8');
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code !== 'EACCES' || !USE_SUDO) throw e;
+    console.log('[install:desktop] Retrying install with sudo…');
+    await $`sudo rm -rf ${optDest}`.quiet();
+    await $`sudo mkdir -p ${optDest}`.quiet();
+    await $`sudo cp -R ${sourceDir}/. ${optDest}/`.quiet();
+    await $`sudo chmod -R a+rX ${optDest}`.quiet();
+    await $`sudo mkdir -p ${desktopDir}`.quiet();
+    const tmpDesktop = join(REPO_ROOT, '.liner-desktop-entry.tmp');
+    writeFileSync(tmpDesktop, desktop, 'utf8');
+    await $`sudo cp ${tmpDesktop} ${desktopFile}`.quiet();
+    rmSync(tmpDesktop, { force: true });
+  }
+
+  if (!existsSync(installedExec)) {
+    fail(`Expected executable at ${installedExec}`);
+  }
   console.log(`[install:desktop] Installed to ${optDest} and ${desktopFile}`);
 }
 
@@ -125,12 +180,13 @@ async function main(): Promise<void> {
   await buildIfNeeded();
 
   if (process.platform === 'darwin') {
-    installMac(findMacApp());
+    await installMac(findMacApp());
     return;
   }
 
   if (process.platform === 'linux') {
-    installLinux(findLinuxUnpacked());
+    const { dir, exec } = findLinuxUnpacked();
+    await installLinux(dir, exec);
     return;
   }
 

@@ -170,6 +170,17 @@ open apps/liner-electron/release/mac-arm64/Liner.app
 bun run smoke:packaged
 ```
 
+**Install to system Applications** (rebuilds bundled desktop, then copies into the OS app location):
+
+```bash
+bun run install:desktop
+```
+
+- **macOS:** `/Applications/Liner.app`
+- **Linux:** `/opt/Liner` plus `liner.desktop` in `/usr/local/share/applications`
+
+Use `SKIP_BUILD=1` to reinstall an existing `release/` artifact. Set `LINER_INSTALL_DIR` to override the destination. On macOS/Linux, the script retries with `sudo` when the system path is not writable.
+
 **Provider keys:** Configure LLM credentials in Craft workspace config (`~/.craft-agent/...`) — Liner does not store API keys. **Verify Engine** in Settings confirms RPC; exit **2** usually means engine down or credentials missing.
 
 **macOS without bundled Bun:** Run `bun run prepare:runtime` before packaging, or install Bun globally if the API fails to start.
