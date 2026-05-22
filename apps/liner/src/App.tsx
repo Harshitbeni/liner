@@ -25,8 +25,10 @@ import {
   type AreaProgress,
 } from '@/lib/area-progress';
 import {
+  isInboxPlaceholder,
   isTodayView,
   partitionAreas,
+  syntheticInboxArea,
   syntheticTodayArea,
 } from '@/lib/areas';
 import { TODAY_VIEW_ID, startOfLocalDayIso } from '@/lib/today';
@@ -99,12 +101,24 @@ export default function App() {
     [panelLayout],
   );
 
-  const selectArea = (id: string) => {
-    setSelectedAreaId(id);
-    saveSelectedAreaId(id);
-    const savedPoint = loadSelectedPointId(id);
+  const selectArea = React.useCallback(async (id: string) => {
+    let areaId = id;
+    let list = areas;
+    if (isInboxPlaceholder(id)) {
+      const a = await api.createArea('Inbox');
+      list = await api.listAreas();
+      setAreas(list);
+      areaId = a.id;
+    }
+    setSelectedAreaId(areaId);
+    saveSelectedAreaId(areaId);
+    const savedPoint = loadSelectedPointId(areaId);
     setSelectedPointId(savedPoint);
-  };
+    if (!isTodayView(areaId)) {
+      const area = list.find((a) => a.id === areaId);
+      if (area) setAreaDescription(area.description);
+    }
+  }, [areas]);
 
   const selectPoint = (id: string) => {
     setSelectedPointId(id);
@@ -135,19 +149,27 @@ export default function App() {
     const t = window.setInterval(refreshHealth, 10_000);
     api.listAreas().then((list) => {
       setAreas(list);
+      const { inbox } = partitionAreas(list);
       const storedArea = loadSelectedAreaId();
-      const areaId =
-        storedArea &&
-        (storedArea === TODAY_VIEW_ID || list.some((a) => a.id === storedArea))
-          ? storedArea
-          : list[0]?.id ?? null;
-      if (areaId) {
-        setSelectedAreaId(areaId);
-        const savedPoint = loadSelectedPointId(areaId);
-        if (savedPoint) setSelectedPointId(savedPoint);
-        const area = list.find((a) => a.id === areaId);
-        if (area) setAreaDescription(area.description);
+      let areaId: string | null = null;
+      if (storedArea === TODAY_VIEW_ID) {
+        areaId = TODAY_VIEW_ID;
+      } else if (storedArea && list.some((a) => a.id === storedArea)) {
+        areaId = storedArea;
+      } else if (isInboxPlaceholder(storedArea) && inbox) {
+        areaId = inbox.id;
+      } else if (inbox) {
+        areaId = inbox.id;
+      } else if (list.length === 0) {
+        areaId = TODAY_VIEW_ID;
+      } else {
+        areaId = list[0]?.id ?? TODAY_VIEW_ID;
       }
+      setSelectedAreaId(areaId);
+      const savedPoint = loadSelectedPointId(areaId);
+      if (savedPoint) setSelectedPointId(savedPoint);
+      const area = list.find((a) => a.id === areaId);
+      if (area) setAreaDescription(area.description);
     });
     return () => window.clearInterval(t);
   }, [refreshHealth]);
@@ -167,16 +189,8 @@ export default function App() {
   }, [selectedAreaId, refreshKey]);
 
   React.useEffect(() => {
-    if (areas.length === 0) {
-      setAreaProgress({});
-      return;
-    }
     let cancelled = false;
-    void Promise.all([
-      ...areas.map(async (a) => {
-        const points = await api.listPoints(a.id);
-        return [a.id, computeAreaProgress(points)] as const;
-      }),
+    const jobs: Promise<readonly [string, AreaProgress]>[] = [
       api.listTodayPoints(todaySince).then((points) => {
         const count = points.length;
         return [
@@ -184,7 +198,24 @@ export default function App() {
           { total: count, completed: 0, ratio: count > 0 ? 1 : 0 },
         ] as const;
       }),
-    ]).then((entries) => {
+    ];
+    const { inbox } = partitionAreas(areas);
+    if (!inbox) {
+      jobs.push(
+        Promise.resolve([
+          syntheticInboxArea().id,
+          { total: 0, completed: 0, ratio: 0 },
+        ] as const),
+      );
+    }
+    for (const a of areas) {
+      jobs.push(
+        api.listPoints(a.id).then((points) => {
+          return [a.id, computeAreaProgress(points)] as const;
+        }),
+      );
+    }
+    void Promise.all(jobs).then((entries) => {
       if (!cancelled) setAreaProgress(Object.fromEntries(entries));
     });
     return () => {
@@ -207,31 +238,36 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  const selectedArea = isTodayView(selectedAreaId)
-    ? syntheticTodayArea()
-    : areas.find((a) => a.id === selectedAreaId);
   const { inbox, userAreas } = React.useMemo(
     () => partitionAreas(areas),
     [areas],
   );
+  const inboxNavArea = inbox ?? syntheticInboxArea();
   const todayArea = syntheticTodayArea();
+  const selectedArea = isTodayView(selectedAreaId)
+    ? todayArea
+    : isInboxPlaceholder(selectedAreaId)
+      ? inboxNavArea
+      : areas.find((a) => a.id === selectedAreaId);
   const areaNames = React.useMemo(
     () => Object.fromEntries(areas.map((a) => [a.id, a.name])),
     [areas],
   );
 
   const creatorAreaId =
-    selectedAreaId && !isTodayView(selectedAreaId)
+    selectedAreaId &&
+    !isTodayView(selectedAreaId) &&
+    !isInboxPlaceholder(selectedAreaId)
       ? selectedAreaId
       : defaultAreaId ?? inbox?.id ?? areas[0]?.id ?? null;
 
   const goToPointInArea = React.useCallback(
     (point: Point) => {
-      selectArea(point.areaId);
+      void selectArea(point.areaId);
       selectPoint(point.id);
       refresh();
     },
-    [refresh],
+    [refresh, selectArea],
   );
 
   const renderAreaRow = (a: Area, options?: { readonly?: boolean }) => (
@@ -244,7 +280,7 @@ export default function App() {
           ? 'bg-accent text-foreground'
           : 'text-muted-foreground hover:bg-accent/80 hover:text-foreground',
       )}
-      onClick={() => selectArea(a.id)}
+      onClick={() => void selectArea(a.id)}
     >
       <AreaProgressIcon
         area={a}
@@ -273,7 +309,13 @@ export default function App() {
   );
 
   const saveAreaDescription = async () => {
-    if (!selectedAreaId || isTodayView(selectedAreaId)) return;
+    if (
+      !selectedAreaId ||
+      isTodayView(selectedAreaId) ||
+      isInboxPlaceholder(selectedAreaId)
+    ) {
+      return;
+    }
     await api.updateArea(selectedAreaId, { description: areaDescription });
     const list = await api.listAreas();
     setAreas(list);
@@ -354,54 +396,32 @@ export default function App() {
             >
           <ScrollArea className="flex-1">
             <nav className="px-1 pb-2 pt-3">
-              {areas.length === 0 ? (
-                <div className="px-2 py-8 text-center text-13 text-muted-foreground">
-                  <p className="mb-3">No areas</p>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    className="text-13 h-7"
-                    onClick={async () => {
-                      const a = await api.createArea('Inbox');
-                      setAreas(await api.listAreas());
-                      selectArea(a.id);
-                    }}
-                  >
-                    Create Inbox
-                  </Button>
-                </div>
-              ) : (
-                <>
-                  {inbox ? renderAreaRow(inbox) : null}
-                  {renderAreaRow(todayArea, { readonly: true })}
+              {renderAreaRow(inboxNavArea, { readonly: !inbox })}
+              {renderAreaRow(todayArea, { readonly: true })}
 
-                  <div className="mt-1 flex h-7 items-center justify-between px-2">
-                    <span className="text-12 text-muted-foreground">
-                      Areas
-                    </span>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon-xs"
-                      className="text-muted-foreground"
-                      aria-label="New area"
-                      onClick={async () => {
-                        const a = await api.createArea('New Area');
-                        setAreas(await api.listAreas());
-                        selectArea(a.id);
-                      }}
-                    >
-                      <IconPlusSmall size={16} ariaHidden />
-                    </Button>
-                  </div>
-                  {userAreas.length === 0 ? (
-                    <p className="px-2 pb-1 text-12 text-muted-foreground">
-                      No areas yet
-                    </p>
-                  ) : (
-                    userAreas.map((a) => renderAreaRow(a))
-                  )}
-                </>
+              <div className="mt-1 flex h-7 items-center justify-between px-2">
+                <span className="text-12 text-muted-foreground">Areas</span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-xs"
+                  className="text-muted-foreground"
+                  aria-label="New area"
+                  onClick={async () => {
+                    const a = await api.createArea('New Area');
+                    setAreas(await api.listAreas());
+                    void selectArea(a.id);
+                  }}
+                >
+                  <IconPlusSmall size={16} ariaHidden />
+                </Button>
+              </div>
+              {userAreas.length === 0 ? (
+                <p className="px-2 pb-1 text-12 text-muted-foreground">
+                  No areas yet
+                </p>
+              ) : (
+                userAreas.map((a) => renderAreaRow(a))
               )}
             </nav>
           </ScrollArea>
@@ -436,7 +456,7 @@ export default function App() {
               className="main-surface"
             >
           <ScrollArea className="flex-1">
-            {selectedAreaId ? (
+            {selectedAreaId && !isInboxPlaceholder(selectedAreaId) ? (
               <OutlineTree
                 areaId={selectedAreaId}
                 selectedId={selectedPointId}
@@ -517,7 +537,7 @@ export default function App() {
             <div className="flex flex-1 flex-col items-center justify-center px-6 text-center">
               <p className="text-20 font-medium">Liner</p>
               <p className="mt-2 text-13 text-muted-foreground">
-                Create an area to begin
+                Select Inbox or Today to begin
               </p>
             </div>
           )}
