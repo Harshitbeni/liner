@@ -25,6 +25,7 @@
     "prepare:runtime": "bun scripts/prepare-bundled-runtime.ts",
     "build:desktop": "bun run bundle:api && bun run build && cd apps/liner-electron && bun run dist",
     "build:desktop:bundled": "bun run bundle:api && bun run build && bun run build:engine && bun run prepare:runtime && cd apps/liner-electron && bun run dist",
+    "install:desktop": "bun scripts/install-liner-app.ts",
     "smoke:packaged": "bun scripts/smoke-packaged-app.ts",
     "verify:engine": "bun scripts/verify-engine.ts",
     "typecheck": "bun run typecheck:core && bun run typecheck:ui && bun run typecheck:electron",
