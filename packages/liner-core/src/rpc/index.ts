@@ -1,45 +1,44 @@
 import type { LinerSettings } from '../types';
-import { isPackagedMode } from '../engine-info';
-import { isCraftServerReachable } from './detect';
-import { CraftSessionRpcAdapter } from './craft-adapter';
+import { isManagedEngineEnabled } from '../engine/supervisor';
+import { isMockFallbackAllowed, isPackagedMode } from '../engine-info';
+import { isOpencodeServerReachable } from './opencode-detect';
+import { OpenCodeSessionRpcAdapter } from './opencode-adapter';
 import { MockSessionRpcAdapter } from './mock-adapter';
-import type { CraftRpcConfig, RpcMode, SessionRpcAdapter } from './types';
+import type { OpenCodeRpcConfig, RpcMode, SessionRpcAdapter } from './types';
 
 export * from './types';
 export { MockSessionRpcAdapter } from './mock-adapter';
-export { CraftSessionRpcAdapter } from './craft-adapter';
-export { isCraftServerReachable } from './detect';
+export { OpenCodeSessionRpcAdapter } from './opencode-adapter';
+export { isOpencodeServerReachable } from './opencode-detect';
 
 export async function resolveRpcMode(
   settings: LinerSettings,
   preferred?: RpcMode,
 ): Promise<RpcMode> {
   if (preferred === 'mock') return 'mock';
-  if (preferred === 'craft') return 'craft';
+  if (preferred === 'opencode') return 'opencode';
   const env = process.env.LINER_RPC_MODE as RpcMode | 'auto' | undefined;
   if (env === 'mock') return 'mock';
-  if (env === 'craft') return 'craft';
-  if (isPackagedMode()) return 'craft';
-  const reachable = await isCraftServerReachable(
-    settings.craftRpcUrl,
-    settings.craftWorkspaceId,
-  );
-  return reachable ? 'craft' : 'mock';
+  if (env === 'opencode') return 'opencode';
+  if (isPackagedMode()) return 'opencode';
+  if (isManagedEngineEnabled()) return 'opencode';
+  const reachable = await isOpencodeServerReachable(settings.opencodeBaseUrl);
+  return reachable ? 'opencode' : 'mock';
 }
 
 export function createRpcAdapter(
   settings: LinerSettings,
-  mode: RpcMode = 'craft',
+  mode: RpcMode = 'opencode',
 ): SessionRpcAdapter {
   if (mode === 'mock') {
     return new MockSessionRpcAdapter();
   }
-  const config: CraftRpcConfig = {
-    url: settings.craftRpcUrl,
-    workspaceId: settings.craftWorkspaceId,
-    token: process.env.CRAFT_SERVER_TOKEN,
+  const config: OpenCodeRpcConfig = {
+    baseUrl: settings.opencodeBaseUrl,
   };
-  return new CraftSessionRpcAdapter(config);
+  return new OpenCodeSessionRpcAdapter(config, {
+    allowMockFallback: isMockFallbackAllowed(),
+  });
 }
 
 export async function createConnectedRpcAdapter(

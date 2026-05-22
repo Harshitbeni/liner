@@ -102,8 +102,8 @@ export class OutlineStore {
       theme: 'system',
       strictPlanGate: false,
       autoAgents: true,
-      craftRpcUrl: 'ws://127.0.0.1:9100',
-      craftWorkspaceId: 'default',
+      opencodeBaseUrl: 'http://127.0.0.1:4096',
+      aiProviderId: 'anthropic',
     });
   }
 
@@ -119,8 +119,12 @@ export class OutlineStore {
       theme: (map.theme as LinerSettings['theme']) ?? 'system',
       strictPlanGate: map.strictPlanGate === 'true',
       autoAgents: map.autoAgents !== 'false',
-      craftRpcUrl: map.craftRpcUrl ?? 'ws://127.0.0.1:9100',
-      craftWorkspaceId: map.craftWorkspaceId ?? 'default',
+      opencodeBaseUrl:
+        map.opencodeBaseUrl ??
+        (map.craftRpcUrl?.startsWith('http')
+          ? map.craftRpcUrl
+          : 'http://127.0.0.1:4096'),
+      aiProviderId: map.aiProviderId ?? 'anthropic',
     };
   }
 
@@ -133,8 +137,8 @@ export class OutlineStore {
       ['theme', next.theme],
       ['strictPlanGate', String(next.strictPlanGate)],
       ['autoAgents', String(next.autoAgents)],
-      ['craftRpcUrl', next.craftRpcUrl],
-      ['craftWorkspaceId', next.craftWorkspaceId],
+      ['opencodeBaseUrl', next.opencodeBaseUrl],
+      ['aiProviderId', next.aiProviderId],
     ];
     for (const [key, value] of entries) {
       this.db.run(

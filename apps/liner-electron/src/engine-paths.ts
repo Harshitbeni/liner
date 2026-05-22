@@ -1,76 +1,31 @@
-import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
-
-export type EngineManifest = {
-  engine: string;
-  version: string;
-  platform: string;
-  arch: string;
-  builtAt: string;
-  craftBuildScript?: string;
-};
-
-export type EngineState =
-  | 'starting'
-  | 'ready'
-  | 'failed'
-  | 'mock-fallback'
-  | 'dev'
-  | 'unavailable';
+import { join } from 'node:path';
 
 /** `electronDist` is `apps/liner-electron/dist` in dev. */
 export function resolveRepoRoot(electronDist: string): string {
   return join(electronDist, '..', '..', '..');
 }
 
-export function resolveCraftEngineRoot(
-  isPackaged: boolean,
-  resourcesPath: string,
-  repoRoot: string,
-): { root: string; source: 'bundled' | 'dev' } {
-  if (isPackaged) {
-    return {
-      root: join(resourcesPath, 'craft-engine'),
-      source: 'bundled',
-    };
+export function resolveEngineRoot(opts: {
+  isPackaged: boolean;
+  resourcesPath: string;
+  repoRoot: string;
+}): { root: string } {
+  if (opts.isPackaged) {
+    return { root: join(opts.resourcesPath, 'opencode-engine') };
   }
   return {
-    root: join(repoRoot, 'vendor', 'craft-agents-oss'),
-    source: 'dev',
+    root: join(opts.repoRoot, 'apps', 'liner-electron', 'build', 'opencode'),
   };
 }
 
-export function readEngineManifest(engineRoot: string): EngineManifest | null {
-  const path = join(engineRoot, 'manifest.json');
-  if (!existsSync(path)) return null;
-  try {
-    return JSON.parse(readFileSync(path, 'utf8')) as EngineManifest;
-  } catch {
-    return null;
-  }
-}
-
-export function resolveCraftServerEntry(
-  isPackaged: boolean,
-  engineRoot: string,
-): string | null {
-  const bundled = join(engineRoot, 'bin', 'craft-server');
-  if (existsSync(bundled)) return bundled;
-
-  if (!isPackaged) {
-    const devEntry = join(engineRoot, 'packages', 'server', 'src', 'index.ts');
-    if (existsSync(devEntry)) return devEntry;
-  }
-  return null;
-}
-
-export function resolveBunExecutable(
-  isPackaged: boolean,
-  resourcesPath: string,
-): { path: string | null; source: 'bundled' | 'system' | 'none' } {
-  if (isPackaged) {
-    const bundled = join(resourcesPath, 'runtime', 'bun');
+export function resolveBunExecutable(opts: {
+  isPackaged: boolean;
+  resourcesPath: string;
+}): { path: string | null; source: 'bundled' | 'system' | 'none' } {
+  if (opts.isPackaged) {
+    const bundled = join(opts.resourcesPath, 'runtime', 'bun');
     if (existsSync(bundled)) return { path: bundled, source: 'bundled' };
   }
 

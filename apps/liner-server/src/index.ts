@@ -1,12 +1,22 @@
+import { join } from 'node:path';
 import {
+  applyEngineEnv,
   createLinerRuntime,
   createWorkspace,
-  CraftSessionRpcAdapter,
+  OpenCodeSessionRpcAdapter,
   getEngineInfo,
-  isCraftServerReachable,
+  isOpencodeServerReachable,
+  isManagedEngineEnabled,
+  isMockFallbackAllowed,
   isPackagedMode,
   listWorkspaces,
   isValidWorkspaceId,
+  readLinerAuth,
+  setProviderApiKey,
+  PROVIDER_OPTIONS,
+  resolveBunExecutable,
+  startManagedEngine,
+  stopManagedEngine,
 } from '@liner/core';
 import type { AgentIntent, PointState, PointPriority } from '@liner/core';
 import { resolveMentions, prependQuote } from '@liner/core';
@@ -43,7 +53,7 @@ function installHarnessBridge(
 async function initRuntime(workspaceId?: string): Promise<NonNullable<typeof runtime>> {
   const id = workspaceId ?? activeWorkspaceId;
   activeWorkspaceId = id;
-  const preferred = process.env.LINER_RPC_MODE as 'mock' | 'craft' | undefined;
+  const preferred = process.env.LINER_RPC_MODE as 'mock' | 'opencode' | undefined;
   if (runtime) {
     await runtime.rpc.disconnect();
   }
@@ -56,6 +66,7 @@ async function initRuntime(workspaceId?: string): Promise<NonNullable<typeof run
 }
 
 async function getRuntime() {
+  if (isManagedEngineEnabled()) await ensureEngineBoot();
   if (!runtime) {
     return initRuntime(activeWorkspaceId);
   }
@@ -70,54 +81,97 @@ async function switchWorkspace(workspaceId: string) {
   return initRuntime(workspaceId);
 }
 
+async function buildHealthLight(): Promise<{
+  ok: boolean;
+  rpc: string;
+  connected: boolean;
+  engineReachable: boolean;
+  craftReachable: boolean;
+  lastError: string | null;
+  workspaceId: string;
+  engine: ReturnType<typeof getEngineInfo>;
+}> {
+  const engine = getEngineInfo();
+  const baseUrl =
+    process.env.OPENCODE_BASE_URL ?? 'http://127.0.0.1:4096';
+  const rpcMode = process.env.LINER_RPC_MODE ?? 'opencode';
+  let engineReachable = false;
+  let lastError: string | null = engine.error;
+
+  if (engine.state === 'ready' || engine.state === 'starting') {
+    engineReachable = await isOpencodeServerReachable(baseUrl, 5_000);
+  }
+
+  if (engine.state === 'starting' && !engineReachable) {
+    lastError = lastError ?? 'AI engine is starting…';
+  }
+
+  return {
+    ok: true,
+    rpc: rpcMode,
+    connected: false,
+    engineReachable,
+    craftReachable: engineReachable,
+    lastError,
+    workspaceId: activeWorkspaceId,
+    engine,
+  };
+}
+
 async function buildHealth(rt: Awaited<ReturnType<typeof getRuntime>>) {
   const { store, rpc } = rt;
   const settings = store.getSettings();
   const connected = rpc.isConnected();
-  let craftReachable = false;
+  let engineReachable = false;
   let lastError: string | null = null;
 
-  if (rpc.mode === 'craft' && rpc instanceof CraftSessionRpcAdapter) {
-    craftReachable = rpc.isCraftNative();
+  if (rpc.mode === 'opencode' && rpc instanceof OpenCodeSessionRpcAdapter) {
+    engineReachable = rpc.isOpencodeNative();
     lastError = rpc.getLastError();
-    if (!craftReachable) {
-      craftReachable = await isCraftServerReachable(
-        settings.craftRpcUrl,
-        settings.craftWorkspaceId,
+    if (!engineReachable) {
+      engineReachable = await isOpencodeServerReachable(
+        settings.opencodeBaseUrl,
+        5_000,
       );
     }
   } else {
-    craftReachable = await isCraftServerReachable(
-      settings.craftRpcUrl,
-      settings.craftWorkspaceId,
+    engineReachable = await isOpencodeServerReachable(
+      settings.opencodeBaseUrl,
+      5_000,
     );
     if (rpc.mode === 'mock') {
-      lastError = craftReachable
+      lastError = engineReachable
         ? null
         : isPackagedMode()
-          ? 'AI engine unavailable — using demo mode. Check Settings → AI Engine.'
-          : 'Using mock RPC — Craft server not reachable';
+          ? 'AI engine unavailable — using demo mode. Check Settings → AI Provider.'
+          : 'Using mock RPC — OpenCode server not reachable';
     }
   }
 
   const engine = getEngineInfo();
   if (
-    isPackagedMode() &&
-    rpc.mode === 'craft' &&
-    rpc instanceof CraftSessionRpcAdapter &&
-    !rpc.isCraftNative()
+    rpc.mode === 'opencode' &&
+    rpc instanceof OpenCodeSessionRpcAdapter &&
+    !rpc.isOpencodeNative()
   ) {
-    engine.state = 'mock-fallback';
-    if (!lastError) {
-      lastError =
-        rpc.getLastError() ??
-        'Bundled engine unreachable — connected via demo fallback';
+    const err =
+      rpc.getLastError() ??
+      engine.error ??
+      'OpenCode RPC unreachable';
+    lastError = lastError ?? err;
+    if (isMockFallbackAllowed()) {
+      engine.state = 'mock-fallback';
+      if (!lastError) {
+        lastError = 'Connected via demo fallback';
+      }
+    } else {
+      engine.state = 'failed';
     }
   }
 
-  if (isPackagedMode() && engine.state === 'ready' && craftReachable) {
+  if (isPackagedMode() && engine.state === 'ready' && engineReachable) {
     engine.state = 'ready';
-  } else if (isPackagedMode() && engine.state === 'starting' && craftReachable) {
+  } else if (isPackagedMode() && engine.state === 'starting' && engineReachable) {
     engine.state = 'ready';
   }
 
@@ -125,7 +179,8 @@ async function buildHealth(rt: Awaited<ReturnType<typeof getRuntime>>) {
     ok: true,
     rpc: rpc.mode,
     connected,
-    craftReachable,
+    engineReachable,
+    craftReachable: engineReachable,
     lastError,
     workspaceId: store.workspaceId,
     engine,
@@ -162,6 +217,82 @@ async function bridgePointSession(pointId: string): Promise<void> {
   );
 }
 
+async function bootManagedEngine(): Promise<void> {
+  if (!isManagedEngineEnabled()) return;
+
+  if (!process.env.LINER_RPC_MODE) {
+    process.env.LINER_RPC_MODE = 'opencode';
+  }
+
+  const isPackaged = isPackagedMode();
+  const repoRoot =
+    process.env.LINER_REPO_ROOT ?? join(import.meta.dir, '..', '..', '..');
+  const resourcesPath = process.env.LINER_RESOURCES_PATH;
+  const { path: bunPath } = resolveBunExecutable({
+    isPackaged,
+    resourcesPath,
+  });
+
+  const result = await startManagedEngine({
+    isPackaged,
+    resourcesPath,
+    repoRoot,
+    engineRootOverride: process.env.LINER_ENGINE_ROOT,
+    opencodePort: Number(process.env.OPENCODE_PORT ?? 4096),
+    opencodeBaseUrl:
+      process.env.OPENCODE_BASE_URL ?? 'http://127.0.0.1:4096',
+    bunPath,
+    pipeStdio: isPackaged,
+    waitTimeoutMs: isPackaged ? 180_000 : 45_000,
+  });
+  applyEngineEnv(result);
+
+  if (result.state === 'ready') {
+    if (result.reason === 'already-running') {
+      console.log(
+        '[liner] AI engine already running at',
+        process.env.OPENCODE_BASE_URL ?? 'http://127.0.0.1:4096',
+      );
+    } else {
+      console.log('[liner] AI engine ready');
+    }
+  } else {
+    console.warn('[liner]', result.error ?? 'AI engine failed to start');
+  }
+}
+
+function registerEngineShutdown(): void {
+  const onStop = () => {
+    stopManagedEngine();
+  };
+  process.on('SIGINT', onStop);
+  process.on('SIGTERM', onStop);
+  process.on('exit', onStop);
+}
+
+let engineBootPromise: Promise<void> | null = null;
+
+function ensureEngineBoot(): Promise<void> {
+  if (!engineBootPromise) {
+    applyEngineEnv({
+      state: 'starting',
+      error: null,
+      version: null,
+      source: isPackagedMode() ? 'bundled' : 'dev',
+      started: false,
+    });
+    engineBootPromise = bootManagedEngine().catch((e) => {
+      console.warn('[liner] engine boot failed', e);
+    });
+  }
+  return engineBootPromise;
+}
+
+registerEngineShutdown();
+if (isManagedEngineEnabled()) {
+  void ensureEngineBoot();
+}
+
 let server: ReturnType<typeof Bun.serve>;
 try {
   server = Bun.serve({
@@ -179,24 +310,75 @@ try {
 
       const url = new URL(req.url);
       const path = url.pathname.replace(/^\/api/, '');
-      const rt = await getRuntime();
-      const { store, rpc, harness } = rt;
 
       try {
         if (path === '/health' && req.method === 'GET') {
+          if (!runtime) {
+            if (isManagedEngineEnabled()) void ensureEngineBoot();
+            return json(await buildHealthLight());
+          }
+          const rt = await getRuntime();
           return json(await buildHealth(rt));
         }
 
-        if (path === '/verify-craft' && req.method === 'POST') {
-          const { verifyCraftConnection } = await import('@liner/core');
-          const settings = store.getSettings();
-          const result = await verifyCraftConnection({
-            craftRpcUrl: settings.craftRpcUrl,
-            craftWorkspaceId: settings.craftWorkspaceId,
-            forceCraft: process.env.LINER_RPC_MODE === 'craft',
-            skip: process.env.CRAFT_SKIP === '1',
+        if (isManagedEngineEnabled()) await ensureEngineBoot();
+        const rt = await getRuntime();
+        const { store, rpc, harness } = rt;
+
+        if (
+          (path === '/verify-engine' || path === '/verify-craft') &&
+          req.method === 'POST'
+        ) {
+          await ensureEngineBoot();
+          const rtForVerify = await getRuntime();
+          const settings = rtForVerify.store.getSettings();
+          let engineReachable = await isOpencodeServerReachable(
+            settings.opencodeBaseUrl,
+            8_000,
+          );
+          if (isManagedEngineEnabled() && !engineReachable) {
+            stopManagedEngine();
+            engineBootPromise = null;
+            await ensureEngineBoot();
+            harnessAgentBridgeInstalled = false;
+            await initRuntime(activeWorkspaceId);
+          }
+          const { verifyEngineConnection } = await import('@liner/core');
+          const rtFresh = await getRuntime();
+          const freshSettings = rtFresh.store.getSettings();
+          const result = await verifyEngineConnection({
+            opencodeBaseUrl: freshSettings.opencodeBaseUrl,
+            forceOpencode: process.env.LINER_RPC_MODE === 'opencode',
+            skip:
+              process.env.ENGINE_SKIP === '1' || process.env.CRAFT_SKIP === '1',
           });
           return json(result);
+        }
+
+        if (path === '/provider' && req.method === 'GET') {
+          const settings = store.getSettings();
+          const auth = readLinerAuth();
+          return json({
+            providers: PROVIDER_OPTIONS,
+            selectedProviderId: settings.aiProviderId,
+            auth,
+          });
+        }
+
+        if (path === '/provider' && req.method === 'POST') {
+          const body = await parseBody(req);
+          const providerId = String(body.providerId ?? '').trim();
+          const apiKey = String(body.apiKey ?? '');
+          if (!providerId) return json({ error: 'providerId required' }, 400);
+          const auth = setProviderApiKey(providerId, apiKey);
+          if (body.selectedProviderId) {
+            store.setSettings({
+              aiProviderId: String(body.selectedProviderId),
+            });
+          } else {
+            store.setSettings({ aiProviderId: providerId });
+          }
+          return json({ ok: true, auth });
         }
 
         if (path === '/workspaces' && req.method === 'GET') {
@@ -504,7 +686,7 @@ try {
         if (path === '/skills' && req.method === 'GET') {
           const { listSkills } = await import('@liner/core');
           const settings = store.getSettings();
-          return json(listSkills(settings.craftWorkspaceId));
+          return json(listSkills(settings.workspaceId));
         }
 
         return json({ error: 'Not found' }, 404);

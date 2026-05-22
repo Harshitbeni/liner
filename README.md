@@ -1,6 +1,6 @@
 # Liner
 
-Personal agent outliner built on [craft-agents-oss](https://github.com/craft-ai-agents/craft-agents-oss).
+Personal agent outliner powered by [OpenCode](https://github.com/anomalyco/opencode) as the local coding-agent engine.
 
 Nested points with uniform schema, comments-first threads (one Craft session per point), and a two-phase parent harness (plan review + completion verification).
 
@@ -28,25 +28,22 @@ git submodule update --init --recursive
 bun install
 ```
 
-### Craft agents (optional, for real sessions)
+### Craft agents (AI Engine)
 
-The API **auto-detects** a Craft server on `ws://127.0.0.1:9100` and uses mock RPC only when Craft is unreachable.
+The Liner API **starts the Craft engine automatically** on `ws://127.0.0.1:9100` (managed engine). No separate terminal for `craft:server` in normal use.
 
 ```bash
-# Terminal 1 — Craft RPC (from submodule)
-cd vendor/craft-agents-oss && bun install && cd ../..
-bun run craft:server
-
-# Terminal 2 — Liner (browser)
+# One command — API spawns Craft, then UI
+cd vendor/craft-agents-oss && bun install && cd ../..   # first time only
 bun run dev
 
-# Smoke test (Craft must be running for exit 0)
-bun run craft:smoke
+# Optional sanity check (API must be running)
+bun run dev:check
 ```
 
-`craft:smoke` exit codes: **0** = Craft connected; **2** = mock-only (Craft not running); **1** = failure.
+`craft:smoke` / **Verify Engine** exit codes: **0** = Craft connected; **2** = mock-only; **1** = failure.
 
-Force modes with `LINER_RPC_MODE=craft` or `LINER_RPC_MODE=mock` on the API process.
+Advanced: `bun run craft:server` runs the engine alone (debug). Force demo mode: `LINER_RPC_MODE=mock LINER_MANAGED_ENGINE=0 bun run dev`.
 
 ## Run
 
@@ -60,10 +57,10 @@ bun run dev:api
 # UI only (needs API)
 bun run dev:ui
 
-# Electron desktop (spawns Craft if present, API, and Vite — one command)
+# Electron desktop (API starts Craft + Vite dev — one command)
 bun run dev:electron
 
-# Full stack: API + UI + Electron
+# Full stack: API + UI + Electron window
 bun run dev:all
 ```
 
@@ -75,7 +72,7 @@ bun run dev:all
 
 See [docs/DOGFOOD.md](docs/DOGFOOD.md). Summary:
 
-1. **AI Engine proof:** Packaged: open `Liner.app` → Settings → **AI Engine** → **Verify Engine** (exit 0). Dev: `bun run craft:server` → `bun run craft:smoke` → health shows `"rpc":"craft"`.
+1. **AI Engine proof:** Any entry path → Settings → **AI Engine** → **Verify Engine** (exit 0). Dev: `bun run dev` then `bun run dev:check` or health shows `"rpc":"craft"`.
 2. **Auto workflow:** Settings → **Auto-run agents on state changes** (default on). Promote backlog → **todo** with empty plan → agent writes plan. Approve → **in-progress** → agent executes. Confirm **◉** indicator on outline row while running.
 3. **Thread UX:** Open a point → send a message → watch **streaming** text in the agent card; expand **Tools** blocks; approve/deny **permission** prompts inline.
 4. **Ship path:** Child **done** → parent harness → **shipped** on parent when children terminal.
@@ -109,18 +106,17 @@ Manual overrides: **Write plan / Execute / Review** in point detail, or `POST /a
 | Command | Description |
 |---------|-------------|
 | `bun run build` | Build core, UI, electron main |
-| `bun run build:engine` | Build Craft server into `apps/liner-electron/build/craft-engine` |
+| `bun run build:engine` | Download OpenCode CLI into `apps/liner-electron/build/opencode` |
 | `bun run prepare:runtime` | Copy Bun into `apps/liner-electron/build/runtime` for packaged API |
 | `bun run build:desktop` | Production Electron app (UI + API; placeholder engine unless built) |
-| `bun run build:desktop:bundled` | Full desktop with bundled Craft engine + runtime |
-| `bun run smoke:packaged` | Probe `/api/health` + `/api/verify-craft` on running app |
-| `bun run verify:engine` | Alias for `craft:smoke` |
+| `bun run build:desktop:bundled` | Full desktop with bundled OpenCode engine + runtime |
+| `bun run smoke:packaged` | Probe `/api/health` + `/api/verify-engine` on running app |
+| `bun run dev:check` | Assert `/api/health` shows engine reachable + ready |
+| `bun run verify:engine` | Probe OpenCode RPC + session smoke test |
 | `bun run typecheck` | Typecheck all packages |
 | `bun test` | Run liner-core tests (state machine, mentions, harness) |
-| `bun run craft:server` | Start craft-agents dev server |
-| `bun run craft:smoke` | Probe Craft RPC + create session + send message |
-| `bun run verify:craft` | Same as craft:smoke; skips when `CRAFT_SKIP=1` |
-| `POST /api/verify-craft` | In-app Craft verification (exit code + message) |
+| `bun run verify:craft` | Alias for `verify:engine` (legacy name) |
+| `POST /api/verify-engine` | In-app engine verification (exit code + message) |
 | `bun test` | liner-core unit tests |
 | `bun run test:e2e` | Playwright smoke (starts API+UI with mock RPC) |
 
@@ -146,7 +142,8 @@ Dogfood notes: [docs/DOGFOOD.md](docs/DOGFOOD.md).
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `LINER_API_PORT` | `9240` | Liner HTTP API port |
-| `LINER_RPC_MODE` | _(auto)_ | `craft`, `mock`, or omit for auto-detect |
+| `LINER_RPC_MODE` | `craft` (managed) | `craft`, `mock` — mock disables managed engine |
+| `LINER_MANAGED_ENGINE` | `1` | Set `0` to skip auto-starting Craft (CI / Playwright) |
 | `CRAFT_RPC_PORT` | `9100` | Craft WebSocket RPC |
 | `CRAFT_SERVER_TOKEN` | — | Bearer token if Craft requires auth |
 | `VITE_LINER_API` | `http://127.0.0.1:9240/api` | UI API base URL |

@@ -18,8 +18,8 @@
       "filter": ["**/*"]
     },
     {
-      "from": "build/craft-engine",
-      "to": "craft-engine",
+      "from": "build/opencode",
+      "to": "opencode-engine",
       "filter": ["**/*"]
     },
     {

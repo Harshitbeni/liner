@@ -1,15 +1,12 @@
 import { app, BrowserWindow, shell } from 'electron';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { join } from 'node:path';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { createConnection } from 'node:net';
 import {
-  readEngineManifest,
   resolveBunExecutable,
-  resolveCraftEngineRoot,
-  resolveCraftServerEntry,
+  resolveEngineRoot,
   resolveRepoRoot,
-  type EngineState,
 } from './engine-paths';
 
 const isPackaged = app.isPackaged;
@@ -24,48 +21,16 @@ const PACKAGED_UI = join(process.resourcesPath, 'liner-ui', 'index.html');
 const UI_DIST = join(REPO_ROOT, 'apps', 'liner', 'dist', 'index.html');
 const LINER_UI = join(REPO_ROOT, 'apps', 'liner');
 
-let craftProcess: ChildProcess | null = null;
 let linerApiProcess: ChildProcess | null = null;
 let viteProcess: ChildProcess | null = null;
 
-let engineState: EngineState = 'starting';
-let engineError: string | null = null;
-let engineVersion: string | null = null;
-let enginePlatform: string | undefined;
-let engineArch: string | undefined;
-let engineSource: 'bundled' | 'dev' | 'none' = 'none';
 let bunPath: string | null = null;
 let bunSource: 'bundled' | 'system' | 'none' = 'none';
 
-const CRAFT_RPC_PORT = process.env.CRAFT_RPC_PORT ?? '9100';
+const OPENCODE_PORT = process.env.OPENCODE_PORT ?? '4096';
 const LINER_API_PORT = process.env.LINER_API_PORT ?? '9240';
 const UI_DEV_PORT = process.env.LINER_UI_PORT ?? '5180';
 const UI_DEV_URL = process.env.LINER_UI_URL ?? `http://127.0.0.1:${UI_DEV_PORT}`;
-
-function setEngineState(state: EngineState, error?: string | null): void {
-  engineState = state;
-  if (error !== undefined) engineError = error;
-}
-
-function engineEnv(): NodeJS.ProcessEnv {
-  return {
-    ...process.env,
-    LINER_PACKAGED: isPackaged ? '1' : '0',
-    LINER_ENGINE_STATE: engineState,
-    LINER_ENGINE_NAME: 'craft-agents-oss',
-    LINER_ENGINE_VERSION: engineVersion ?? '',
-    LINER_ENGINE_ERROR: engineError ?? '',
-    LINER_ENGINE_SOURCE: engineSource,
-    LINER_ENGINE_PLATFORM: enginePlatform ?? '',
-    LINER_ENGINE_ARCH: engineArch ?? '',
-    LINER_BUN_PATH: bunPath ?? '',
-    LINER_BUN_SOURCE: bunSource,
-    LINER_RPC_MODE:
-      process.env.LINER_RPC_MODE ?? (isPackaged ? 'craft' : 'auto'),
-    CRAFT_RPC_PORT,
-    LINER_API_PORT,
-  };
-}
 
 function waitForPort(port: number, timeoutMs = 30_000): Promise<void> {
   const start = Date.now();
@@ -89,103 +54,35 @@ function waitForPort(port: number, timeoutMs = 30_000): Promise<void> {
   });
 }
 
-function spawnCraftServer(): void {
-  const { root: engineRoot, source } = resolveCraftEngineRoot(
+function apiEnv(): NodeJS.ProcessEnv {
+  const { root: engineRoot } = resolveEngineRoot({
     isPackaged,
-    process.resourcesPath,
-    REPO_ROOT,
-  );
-  engineSource = source;
+    resourcesPath: process.resourcesPath,
+    repoRoot: REPO_ROOT,
+  });
 
-  const manifest = readEngineManifest(engineRoot);
-  if (manifest) {
-    engineVersion = manifest.version;
-    enginePlatform = manifest.platform;
-    engineArch = manifest.arch;
-  } else if (!isPackaged && existsSync(join(engineRoot, 'package.json'))) {
-    try {
-      const pkg = JSON.parse(
-        readFileSync(join(engineRoot, 'package.json'), 'utf8'),
-      ) as { version?: string };
-      engineVersion = pkg.version ?? null;
-    } catch {
-      engineVersion = null;
-    }
-  }
-
-  const entry = resolveCraftServerEntry(isPackaged, engineRoot);
-  if (!entry) {
-    const msg = isPackaged
-      ? 'Bundled AI engine not found in app resources. Rebuild with `bun run build:desktop:bundled`.'
-      : 'craft-agents-oss submodule missing — install vendor or use mock RPC.';
-    console.warn('[liner]', msg);
-    setEngineState(isPackaged ? 'failed' : 'unavailable', msg);
-    return;
-  }
-
-  setEngineState('starting');
-
-  const spawnEnv = {
+  return {
     ...process.env,
-    CRAFT_RPC_HOST: '127.0.0.1',
-    CRAFT_RPC_PORT,
-    CRAFT_DEBUG: 'true',
-    CRAFT_BUNDLED_ASSETS_ROOT: engineRoot,
-    CRAFT_IS_PACKAGED: isPackaged ? 'true' : 'false',
-    CRAFT_APP_ROOT: engineRoot,
-    CRAFT_RESOURCES_PATH: join(engineRoot, 'resources'),
+    LINER_PACKAGED: isPackaged ? '1' : '0',
+    LINER_MANAGED_ENGINE: '1',
+    LINER_RPC_MODE: process.env.LINER_RPC_MODE ?? 'opencode',
+    OPENCODE_PORT,
+    OPENCODE_BASE_URL:
+      process.env.OPENCODE_BASE_URL ?? `http://127.0.0.1:${OPENCODE_PORT}`,
+    LINER_ENGINE_ROOT: engineRoot,
+    LINER_REPO_ROOT: REPO_ROOT,
+    LINER_RESOURCES_PATH: process.resourcesPath,
+    LINER_BUN_PATH: bunPath ?? '',
+    LINER_BUN_SOURCE: bunSource,
+    LINER_API_PORT,
   };
-
-  let child: ChildProcess;
-
-  if (isPackaged || entry.endsWith('craft-server')) {
-    child = spawn(entry, [], {
-      cwd: engineRoot,
-      env: spawnEnv,
-      stdio: isPackaged ? 'pipe' : 'inherit',
-    });
-  } else {
-    const bun = bunPath ?? 'bun';
-    child = spawn(bun, ['run', entry], {
-      cwd: engineRoot,
-      env: spawnEnv,
-      stdio: isPackaged ? 'pipe' : 'inherit',
-    });
-  }
-
-  craftProcess = child;
-
-  child.on('spawn', () => {
-    console.log('[liner] AI engine starting', { entry, engineRoot });
-  });
-
-  child.on('exit', (code) => {
-    console.log('[liner] AI engine exited', code);
-    craftProcess = null;
-    if (engineState === 'starting' || engineState === 'ready') {
-      setEngineState('failed', `AI engine exited (code ${code ?? 'unknown'})`);
-    }
-  });
-
-  child.stderr?.on('data', (chunk) => {
-    const line = String(chunk).trim();
-    if (line) console.warn('[liner] craft stderr:', line);
-  });
-
-  void waitForPort(Number(CRAFT_RPC_PORT), 45_000)
-    .then(() => {
-      if (craftProcess) setEngineState('ready', null);
-    })
-    .catch((e) => {
-      setEngineState(
-        'failed',
-        e instanceof Error ? e.message : 'AI engine port not ready',
-      );
-    });
 }
 
 function resolveApiBun(): string | null {
-  const { path, source } = resolveBunExecutable(isPackaged, process.resourcesPath);
+  const { path, source } = resolveBunExecutable({
+    isPackaged,
+    resourcesPath: process.resourcesPath,
+  });
   bunPath = path;
   bunSource = source;
   return path;
@@ -197,7 +94,6 @@ function spawnLinerApi(): void {
     const msg =
       'Bun runtime not found. Install: curl -fsSL https://bun.sh/install | bash — or rebuild with `bun run prepare:runtime`.';
     console.error('[liner]', msg);
-    setEngineState(engineState === 'starting' ? 'failed' : engineState, msg);
     return;
   }
 
@@ -208,7 +104,7 @@ function spawnLinerApi(): void {
 
   linerApiProcess = spawn(bun, [serverScript], {
     cwd: apiCwd,
-    env: engineEnv(),
+    env: apiEnv(),
     stdio: isPackaged ? 'pipe' : 'inherit',
   });
 
@@ -282,12 +178,11 @@ function createWindow(): void {
 
 app.whenReady().then(async () => {
   resolveApiBun();
-  spawnCraftServer();
   spawnLinerApi();
   spawnViteDev();
 
   try {
-    await waitForPort(Number(LINER_API_PORT));
+    await waitForPort(Number(LINER_API_PORT), 60_000);
     if (!isPackaged && (!existsSync(UI_DIST) || process.env.LINER_DEV !== '0')) {
       await waitForPort(Number(UI_DEV_PORT));
     }
@@ -303,7 +198,6 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', () => {
-  craftProcess?.kill();
   linerApiProcess?.kill();
   viteProcess?.kill();
 });

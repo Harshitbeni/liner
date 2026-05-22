@@ -9,13 +9,12 @@ Use this after running the workflow on a real project with the **bundled AI Engi
 ```bash
 git submodule update --init --recursive
 bun install
+cd vendor/craft-agents-oss && bun install && cd ../..
 
-# Terminal 1 — Craft RPC (optional for real agents)
-bun run craft:server
-
-# Terminal 2 — verify + dev
-bun run craft:smoke          # record exit code in table below
-bun run dev                  # UI + API
+# One terminal — API starts Craft automatically
+bun run dev
+bun run dev:check            # optional: assert engine ready
+# Settings → AI Engine → Verify Engine (record exit code below)
 ```
 
 ### Packaged desktop (single app)
@@ -58,7 +57,7 @@ One area (e.g. “Liner v1.4”), three nested points.
 
 | Step | Action | Done |
 |------|--------|------|
-| 1 | **Engine proof:** Packaged: open `Liner.app` from Finder → Settings → AI Engine → **Verify Engine** exit **0** (or `bun run smoke:packaged`). Dev: `craft:smoke` exit **0**. Health: `"rpc":"craft"`, `craftReachable: true` | [ ] |
+| 1 | **Engine proof:** `bun run dev` or packaged `.app` → Settings → AI Engine → **Verify Engine** exit **0** (or `dev:check` / `smoke:packaged`). Health: `"rpc":"craft"`, `craftReachable: true`, `engine.state: ready` | [ ] |
 | 2 | **Auto workflow:** Settings → auto agents on. backlog → todo (plan) → approve → in-progress → execute → done → ship | [ ] |
 | 3 | **Parent harness:** Parent waits while children active; unblocks when children terminal or all cancelled | [ ] |
 | 4 | **Thread:** Send message, streaming on agent card, tools, permission approve/deny (stale prompts warn after 5 min) | [ ] |

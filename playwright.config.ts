@@ -15,7 +15,7 @@ export default defineConfig({
     trace: 'on-first-retry',
   },
   webServer: {
-    command: `LINER_RPC_MODE=mock LINER_API_PORT=${apiPort} VITE_LINER_API=http://127.0.0.1:${apiPort}/api bun run dev`,
+    command: `LINER_RPC_MODE=mock LINER_MANAGED_ENGINE=0 LINER_API_PORT=${apiPort} VITE_LINER_API=http://127.0.0.1:${apiPort}/api bun run dev`,
     url: `http://127.0.0.1:${uiPort}`,
     reuseExistingServer: !process.env.CI,
     timeout: 180_000,

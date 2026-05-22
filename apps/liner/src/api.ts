@@ -39,18 +39,26 @@ export type HealthResponse = {
   ok: boolean;
   rpc: string;
   connected: boolean;
-  craftReachable: boolean;
+  engineReachable?: boolean;
+  /** @deprecated use engineReachable */
+  craftReachable?: boolean;
   lastError: string | null;
   workspaceId?: string;
   engine?: EngineHealth;
 };
 
-export type VerifyCraftResponse = {
+export type VerifyEngineResponse = {
   exitCode: number;
   ok: boolean;
   message: string;
   rpcMode?: string;
   skipped?: boolean;
+};
+
+export type ProviderConfigResponse = {
+  providers: Array<{ id: string; label: string; hint: string }>;
+  selectedProviderId: string;
+  auth: Record<string, unknown>;
 };
 
 export type WorkspaceInfo = {
@@ -112,8 +120,20 @@ export function subscribePointEvents(
 
 export const api = {
   health: () => request<HealthResponse>('/health'),
+  verifyEngine: () =>
+    request<VerifyEngineResponse>('/verify-engine', { method: 'POST' }),
   verifyCraft: () =>
-    request<VerifyCraftResponse>('/verify-craft', { method: 'POST' }),
+    request<VerifyEngineResponse>('/verify-craft', { method: 'POST' }),
+  getProviderConfig: () => request<ProviderConfigResponse>('/provider'),
+  saveProviderConfig: (body: {
+    providerId: string;
+    apiKey?: string;
+    selectedProviderId?: string;
+  }) =>
+    request<{ ok: boolean; auth: Record<string, unknown> }>('/provider', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
   listWorkspaces: () => request<WorkspaceInfo[]>('/workspaces'),
   createWorkspace: (id: string) =>
     request<WorkspaceInfo>('/workspaces', {

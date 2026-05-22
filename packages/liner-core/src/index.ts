@@ -9,9 +9,12 @@ export * from './rpc/index';
 export * from './session-context';
 export * from './agent-prompts';
 export * from './skills';
+export * from './verify-engine';
 export * from './verify-craft';
+export * from './provider-auth';
 export * from './workspaces';
 export * from './engine-info';
+export * from './engine/index';
 
 import { DEFAULT_WORKSPACE_ID } from './paths';
 import { OutlineStore } from './store';

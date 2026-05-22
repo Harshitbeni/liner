@@ -73,7 +73,7 @@ export class MockSessionRpcAdapter implements SessionRpcAdapter {
         sessionId,
         role: 'assistant',
         content:
-          '_Mock agent reply._ Connect Craft server (`bun run craft:server`) for real sessions.',
+          '_Mock agent reply._ Start OpenCode or set LINER_RPC_MODE=opencode for real sessions.',
         createdAt: new Date().toISOString(),
         meta: { collapsedTools: true },
       };

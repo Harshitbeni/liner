@@ -8,7 +8,7 @@
     "build:main": "esbuild src/main.ts --bundle --platform=node --format=cjs --outfile=dist/main.cjs --external:electron",
     "build:preload": "esbuild src/preload.ts --bundle --platform=node --format=cjs --outfile=dist/preload.cjs --external:electron",
     "build": "bun run build:main && bun run build:preload",
-    "dev": "bun run build && concurrently -n api,electron -c green,magenta \"cd ../liner-server && LINER_RPC_MODE=mock bun run dev\" \"wait-on http://127.0.0.1:9240/api/health && electron .\"",
+    "dev": "bun run build && electron .",
     "start": "bun run build && electron .",
     "predist": "bun ../../scripts/bundle-liner-server.ts",
     "dist": "bun run build && electron-builder --config electron-builder.json",

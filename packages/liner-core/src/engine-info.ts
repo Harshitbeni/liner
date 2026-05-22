@@ -27,7 +27,7 @@ export function getEngineInfo(): EngineInfo {
     (packaged ? 'bundled' : 'dev');
 
   return {
-    name: process.env.LINER_ENGINE_NAME?.trim() || 'craft-agents-oss',
+    name: process.env.LINER_ENGINE_NAME?.trim() || 'opencode',
     version,
     state: packaged && !process.env.LINER_ENGINE_STATE ? 'starting' : state,
     source,
@@ -38,7 +38,12 @@ export function getEngineInfo(): EngineInfo {
   };
 }
 
-/** Packaged builds should prefer Craft RPC and surface failures explicitly. */
+/** Packaged builds should prefer OpenCode RPC and surface failures explicitly. */
 export function isPackagedMode(): boolean {
   return process.env.LINER_PACKAGED === '1';
+}
+
+/** True when mock fallback to demo RPC is allowed (CI, explicit opt-in). */
+export function isMockFallbackAllowed(): boolean {
+  return process.env.LINER_ALLOW_MOCK_FALLBACK === '1';
 }

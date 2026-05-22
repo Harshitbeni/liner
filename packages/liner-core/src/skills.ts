@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { workspaceDir } from './paths';
 
 /** Curated skill slugs for @mention autocomplete (slash commands). */
 export const SKILL_REGISTRY: Record<string, { label: string; description: string }> =
@@ -46,23 +47,12 @@ export type SkillEntry = {
   source?: 'static' | 'workspace';
 };
 
-function craftWorkspaceSkillsDir(craftWorkspaceId: string): string {
-  return join(
-    homedir(),
-    '.craft-agent',
-    'workspaces',
-    craftWorkspaceId,
-    'skills',
-  );
+function globalLinerSkillsDir(): string {
+  return join(homedir(), '.liner', 'skills');
 }
 
-function vendorCraftSkillsDirs(): string[] {
-  const root = join(import.meta.dir, '..', '..', '..', 'vendor', 'craft-agents-oss');
-  const candidates = [
-    join(root, 'skills'),
-    join(root, '.cursor', 'skills'),
-  ];
-  return candidates.filter((p) => existsSync(p));
+function workspaceSkillsDir(linerWorkspaceId: string): string {
+  return join(workspaceDir(linerWorkspaceId), '.liner', 'skills');
 }
 
 function titleFromSkillMd(content: string, fallback: string): string {
@@ -84,7 +74,7 @@ function descriptionFromSkillMd(content: string): string {
     .split('\n\n')
     .map((p) => p.trim())
     .find((p) => p && !p.startsWith('#'));
-  return para?.slice(0, 120) ?? 'Craft workspace skill';
+  return para?.slice(0, 120) ?? 'Workspace skill';
 }
 
 function scanSkillsDirectory(
@@ -112,11 +102,11 @@ function scanSkillsDirectory(
   return out;
 }
 
-/** Load skills from Craft workspace filesystem; merge with static registry. */
-export function loadWorkspaceSkills(craftWorkspaceId: string): SkillEntry[] {
+/** Load skills from ~/.liner/skills and workspace .liner/skills/. */
+export function loadWorkspaceSkills(linerWorkspaceId: string): SkillEntry[] {
   const dirs = [
-    craftWorkspaceSkillsDir(craftWorkspaceId),
-    ...vendorCraftSkillsDirs(),
+    globalLinerSkillsDir(),
+    workspaceSkillsDir(linerWorkspaceId),
   ];
   const byId = new Map<string, SkillEntry>();
   for (const dir of dirs) {
@@ -127,9 +117,9 @@ export function loadWorkspaceSkills(craftWorkspaceId: string): SkillEntry[] {
   return [...byId.values()].sort((a, b) => a.id.localeCompare(b.id));
 }
 
-export function listSkills(craftWorkspaceId?: string): SkillEntry[] {
-  const dynamic = craftWorkspaceId
-    ? loadWorkspaceSkills(craftWorkspaceId)
+export function listSkills(linerWorkspaceId?: string): SkillEntry[] {
+  const dynamic = linerWorkspaceId
+    ? loadWorkspaceSkills(linerWorkspaceId)
     : [];
   const byId = new Map<string, SkillEntry>();
 

@@ -13,16 +13,14 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
       - uses: oven-sh/setup-bun@v2
 
       - name: Install dependencies
         run: bun install
 
-      - name: Build desktop artifact
-        run: bun run build:desktop
+      - name: Build desktop artifact (bundled OpenCode engine)
+        run: bun run build:desktop:bundled
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
 

@@ -1,7 +1,7 @@
 import * as React from 'react';
 import type { LinerSettings } from '@liner/core';
 import { api, type HealthResponse, type WorkspaceInfo } from '../api';
-import { CraftSetupPanel } from './CraftSetupPanel';
+import { ProviderSetupPanel } from './ProviderSetupPanel';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -23,11 +23,11 @@ import {
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 
-type Tab = 'general' | 'craft' | 'agents' | 'appearance' | 'shortcuts';
+type Tab = 'general' | 'provider' | 'agents' | 'appearance' | 'shortcuts';
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'general', label: 'General' },
-  { id: 'craft', label: 'AI Engine' },
+  { id: 'provider', label: 'AI Provider' },
   { id: 'agents', label: 'Agents' },
   { id: 'appearance', label: 'Appearance' },
   { id: 'shortcuts', label: 'Shortcuts' },
@@ -105,20 +105,12 @@ export function SettingsModal({
               {tab === 'general' && settings ? (
                 <>
                   <div className="space-y-2">
-                    <Label htmlFor="craft-rpc">Craft RPC URL</Label>
+                    <Label htmlFor="opencode-url">OpenCode API URL</Label>
                     <Input
-                      id="craft-rpc"
-                      value={settings.craftRpcUrl}
-                      onChange={(e) => patch({ craftRpcUrl: e.target.value })}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="craft-ws">Craft workspace ID</Label>
-                    <Input
-                      id="craft-ws"
-                      value={settings.craftWorkspaceId}
+                      id="opencode-url"
+                      value={settings.opencodeBaseUrl}
                       onChange={(e) =>
-                        patch({ craftWorkspaceId: e.target.value })
+                        patch({ opencodeBaseUrl: e.target.value })
                       }
                     />
                   </div>
@@ -204,14 +196,15 @@ export function SettingsModal({
                       </Button>
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      Stored under ~/.liner/workspaces/
+                      Stored under ~/.liner/workspaces/ · skills in{' '}
+                      <code>.liner/skills/</code>
                     </p>
                   </div>
                 </>
               ) : null}
 
-              {tab === 'craft' ? (
-                <CraftSetupPanel
+              {tab === 'provider' ? (
+                <ProviderSetupPanel
                   health={health ?? null}
                   onHealthRefresh={onHealthRefresh}
                 />

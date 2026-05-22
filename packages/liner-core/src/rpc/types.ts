@@ -1,6 +1,6 @@
 import type { ThreadMessage } from '../types';
 
-export type RpcMode = 'craft' | 'mock';
+export type RpcMode = 'opencode' | 'mock';
 
 export type EnsureSessionOptions = {
   title?: string;
@@ -33,8 +33,6 @@ export interface SessionRpcAdapter {
   ): Promise<void>;
 }
 
-export type CraftRpcConfig = {
-  url: string;
-  workspaceId: string;
-  token?: string;
+export type OpenCodeRpcConfig = {
+  baseUrl: string;
 };

@@ -52,7 +52,7 @@ async function main(): Promise<void> {
     ok: boolean;
     message: string;
     rpcMode?: string;
-  }>('/verify-craft', { method: 'POST' });
+  }>('/verify-engine', { method: 'POST' });
 
   console.log('[smoke:packaged] Verify:', JSON.stringify(verify, null, 2));
 
