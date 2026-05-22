@@ -19,3 +19,14 @@ export function computeAreaProgress(points: Point[]): AreaProgress {
   ).length;
   return { total, completed, ratio: completed / total };
 }
+
+/** Discrete progress tier for sidebar icons (matches task state icon language). */
+export type AreaProgressTier = 'empty' | 'todo' | 'partial-25' | 'partial-50' | 'complete';
+
+export function areaProgressTier(progress: AreaProgress): AreaProgressTier {
+  if (progress.total === 0) return 'empty';
+  if (progress.completed >= progress.total) return 'complete';
+  if (progress.completed === 0) return 'todo';
+  if (progress.ratio < 0.5) return 'partial-25';
+  return 'partial-50';
+}

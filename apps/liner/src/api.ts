@@ -218,6 +218,14 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify({ childIds }),
     }),
+  movePoint: (
+    id: string,
+    input: { parentId: string | null; afterId?: string | null },
+  ) =>
+    request<Point>(`/points/${id}/move`, {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    }),
   ensureSession: (id: string) =>
     request<{ sessionId: string }>(`/points/${id}/session`, { method: 'POST' }),
   getMessages: (id: string) => request<ThreadMessage[]>(`/points/${id}/messages`),

@@ -48,7 +48,7 @@
   --input: theme(colors.neutral.800);
   --ring: theme(colors.neutral.600);
   --sidebar: theme(colors.neutral.950);
-  --canvas: theme(colors.neutral.800);
+  --canvas: color-mix(in srgb, theme(colors.neutral.800) 85%, theme(colors.neutral.900));
 }
 
 @theme inline {

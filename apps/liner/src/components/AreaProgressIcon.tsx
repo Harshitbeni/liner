@@ -1,17 +1,43 @@
+import type { ComponentType } from 'react';
 import { IconCalendar1 } from '@central-icons-react/round-filled-radius-3-stroke-1.5/IconCalendar1';
 import { IconInboxEmpty } from '@central-icons-react/round-filled-radius-3-stroke-1.5/IconInboxEmpty';
-import { IconCircle } from '@central-icons-react/round-outlined-radius-3-stroke-1.5/IconCircle';
+import { IconCircleDashed } from '@central-icons-react/round-outlined-radius-3-stroke-2/IconCircleDashed';
+import { IconFormCircle } from '@central-icons-react/round-outlined-radius-3-stroke-2/IconFormCircle';
+import { IconProgress25 } from '@central-icons-react/round-outlined-radius-3-stroke-2/IconProgress25';
+import { IconProgress50 } from '@central-icons-react/round-outlined-radius-3-stroke-2/IconProgress50';
+import { IconProgress100 } from '@central-icons-react/round-outlined-radius-3-stroke-2/IconProgress100';
+import type { CentralIconBaseProps } from '@central-icons-react/round-outlined-radius-3-stroke-2/CentralIconBase';
 import type { Area } from '@liner/core';
 import { isInboxArea, isTodayView } from '@/lib/areas';
-import type { AreaProgress } from '@/lib/area-progress';
+import {
+  areaProgressTier,
+  type AreaProgress,
+  type AreaProgressTier,
+} from '@/lib/area-progress';
 import { cn } from '@/lib/utils';
 
-/** Sidebar nav icon size (Central Icons: round, radius-3, stroke 1.5). Smart areas use filled glyphs. */
+/** Sidebar nav icon size (Central Icons: round, radius-3). Smart areas use filled glyphs. */
 export const SIDEBAR_ICON_SIZE = 16;
 const SIZE = SIDEBAR_ICON_SIZE;
-const R = 6;
-const C = 2 * Math.PI * R;
-const RING_STROKE = 1.5;
+
+const PROGRESS_TIER_ICONS: Record<
+  AreaProgressTier,
+  ComponentType<CentralIconBaseProps>
+> = {
+  empty: IconCircleDashed,
+  todo: IconFormCircle,
+  'partial-25': IconProgress25,
+  'partial-50': IconProgress50,
+  complete: IconProgress100,
+};
+
+const PROGRESS_TIER_COLORS: Record<AreaProgressTier, string> = {
+  empty: 'text-neutral-400',
+  todo: 'text-muted-foreground',
+  'partial-25': 'text-green-600',
+  'partial-50': 'text-green-600',
+  complete: 'text-green-600',
+};
 
 type Props = {
   area: Pick<Area, 'id' | 'name' | 'icon'>;
@@ -19,24 +45,13 @@ type Props = {
   className?: string;
 };
 
-function InnerIcon({
+function SmartAreaIcon({
   area,
-  iconSize = 8,
+  iconSize,
 }: {
   area: Pick<Area, 'id' | 'name' | 'icon'>;
-  iconSize?: number;
+  iconSize: number;
 }) {
-  if (area.icon) {
-    return (
-      <span
-        className="leading-none"
-        style={{ fontSize: iconSize }}
-        aria-hidden
-      >
-        {area.icon}
-      </span>
-    );
-  }
   if (isTodayView(area.id)) {
     return (
       <IconCalendar1
@@ -46,20 +61,11 @@ function InnerIcon({
       />
     );
   }
-  if (isInboxArea(area)) {
-    return (
-      <IconInboxEmpty
-        size={iconSize}
-        ariaHidden
-        className="text-current opacity-90"
-      />
-    );
-  }
   return (
-    <IconCircle
-      size={8}
+    <IconInboxEmpty
+      size={iconSize}
       ariaHidden
-      className="text-current opacity-40"
+      className="text-current opacity-90"
     />
   );
 }
@@ -78,55 +84,26 @@ export function AreaProgressIcon({ area, progress, className }: Props) {
         title={label}
         aria-label={label}
       >
-        <InnerIcon area={area} iconSize={SIZE} />
+        <SmartAreaIcon area={area} iconSize={SIZE} />
       </div>
     );
   }
 
-  const offset = C * (1 - progress.ratio);
+  const tier = areaProgressTier(progress);
+  const Icon = PROGRESS_TIER_ICONS[tier];
 
   return (
     <div
-      className={cn('relative shrink-0', className)}
+      className={cn('flex shrink-0 items-center justify-center', className)}
       style={{ width: SIZE, height: SIZE }}
       title={label}
       aria-label={label}
     >
-      <svg
-        width={SIZE}
-        height={SIZE}
-        viewBox={`0 0 ${SIZE} ${SIZE}`}
-        className="block"
-        aria-hidden
-      >
-        <circle
-          cx={SIZE / 2}
-          cy={SIZE / 2}
-          r={R}
-          fill="none"
-          stroke="currentColor"
-          strokeWidth={RING_STROKE}
-          className="opacity-20"
-        />
-        {progress.total > 0 && progress.ratio > 0 ? (
-          <circle
-            cx={SIZE / 2}
-            cy={SIZE / 2}
-            r={R}
-            fill="none"
-            stroke="currentColor"
-            strokeWidth={RING_STROKE}
-            strokeLinecap="round"
-            strokeDasharray={C}
-            strokeDashoffset={offset}
-            transform={`rotate(-90 ${SIZE / 2} ${SIZE / 2})`}
-            className="opacity-70"
-          />
-        ) : null}
-      </svg>
-      <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-        <InnerIcon area={area} iconSize={8} />
-      </div>
+      <Icon
+        size={SIZE}
+        ariaHidden
+        className={cn('shrink-0', PROGRESS_TIER_COLORS[tier])}
+      />
     </div>
   );
 }

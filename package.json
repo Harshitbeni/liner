@@ -11,7 +11,7 @@
     "predev": "bun scripts/free-dev-ports.ts",
     "dev": "concurrently -n api,ui -c green,cyan \"bun run dev:api\" \"bun run dev:ui\"",
     "dev:all": "concurrently -n api,ui,electron -c green,cyan,magenta \"bun run dev:api\" \"bun run dev:ui\" \"bun run dev:electron\"",
-    "dev:api": "cd apps/liner-server && bun run dev",
+    "dev:api": "cd apps/liner-server && LINER_RPC_MODE=mock LINER_MANAGED_ENGINE=0 bun run dev",
     "dev:ui": "cd apps/liner && bun run dev",
     "dev:electron": "cd apps/liner-electron && bun run dev",
     "dev:check": "bun scripts/dev-check.ts",

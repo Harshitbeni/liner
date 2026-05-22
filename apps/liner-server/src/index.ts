@@ -611,6 +611,20 @@ try {
             if (!updated) return json({ error: 'Not found' }, 404);
             return json(updated);
           }
+          if (segments[2] === 'move') {
+            const body = await parseBody(req);
+            const parentId =
+              body.parentId === null || body.parentId === undefined
+                ? null
+                : (body.parentId as string);
+            const afterId =
+              body.afterId === null || body.afterId === undefined
+                ? undefined
+                : (body.afterId as string);
+            const moved = store.movePoint(id, parentId, afterId);
+            if (!moved) return json({ error: 'Not found' }, 404);
+            return json(moved);
+          }
           const body = await parseBody(req);
           const existing = store.getPoint(id);
           if (!existing) return json({ error: 'Not found' }, 404);

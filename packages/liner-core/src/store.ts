@@ -384,6 +384,93 @@ export class OutlineStore {
     return this.getPoint(parentId);
   }
 
+  /** True if `ancestorId` appears on the parent chain above `nodeId`. */
+  private isAncestorOf(ancestorId: string, nodeId: string): boolean {
+    let cursor: string | null = nodeId;
+    while (cursor) {
+      if (cursor === ancestorId) return true;
+      const p = this.getPoint(cursor);
+      cursor = p?.parentId ?? null;
+    }
+    return false;
+  }
+
+  private setParentChildIds(parentId: string, childIds: string[], ts: string) {
+    this.db.run(
+      'UPDATE points SET child_ids = ?, updated_at = ? WHERE id = ?',
+      [JSON.stringify(childIds), ts, parentId],
+    );
+    childIds.forEach((cid, index) => {
+      this.db.run('UPDATE points SET sort_order = ? WHERE id = ?', [
+        index,
+        cid,
+      ]);
+    });
+  }
+
+  movePoint(
+    id: string,
+    newParentId: string | null,
+    afterSiblingId?: string | null,
+  ): Point | null {
+    const point = this.getPoint(id);
+    if (!point) return null;
+
+    if (newParentId === id) return null;
+    if (newParentId && this.isAncestorOf(id, newParentId)) return null;
+
+    const ts = now();
+    const oldParentId = point.parentId;
+
+    if (oldParentId) {
+      const oldParent = this.getPoint(oldParentId);
+      if (oldParent) {
+        this.setParentChildIds(
+          oldParentId,
+          oldParent.childIds.filter((c) => c !== id),
+          ts,
+        );
+      }
+    }
+
+    let orderedIds: string[];
+    if (newParentId) {
+      const newParent = this.getPoint(newParentId);
+      if (!newParent) return null;
+      orderedIds = newParent.childIds.filter((c) => c !== id);
+      const insertAt =
+        afterSiblingId != null
+          ? orderedIds.indexOf(afterSiblingId) + 1
+          : orderedIds.length;
+      const at = insertAt < 0 ? orderedIds.length : insertAt;
+      orderedIds.splice(at, 0, id);
+      this.setParentChildIds(newParentId, orderedIds, ts);
+    } else {
+      orderedIds = this.listPoints({ areaId: point.areaId, parentId: null })
+        .map((p) => p.id)
+        .filter((cid) => cid !== id);
+      const insertAt =
+        afterSiblingId != null
+          ? orderedIds.indexOf(afterSiblingId) + 1
+          : orderedIds.length;
+      const at = insertAt < 0 ? orderedIds.length : insertAt;
+      orderedIds.splice(at, 0, id);
+      orderedIds.forEach((cid, index) => {
+        this.db.run('UPDATE points SET sort_order = ? WHERE id = ?', [
+          index,
+          cid,
+        ]);
+      });
+    }
+
+    const sortOrder = orderedIds.indexOf(id);
+    this.db.run(
+      'UPDATE points SET parent_id = ?, sort_order = ?, updated_at = ? WHERE id = ?',
+      [newParentId, sortOrder, ts, id],
+    );
+    return this.getPoint(id);
+  }
+
   getChildren(pointId: string): Point[] {
     const point = this.getPoint(pointId);
     if (!point) return [];

@@ -52,6 +52,76 @@ function sortByRecent(points: Point[]): Point[] {
   );
 }
 
+function findPoint(
+  id: string,
+  roots: Point[],
+  childrenMap: Record<string, Point[]>,
+): Point | undefined {
+  for (const p of roots) {
+    if (p.id === id) return p;
+  }
+  for (const kids of Object.values(childrenMap)) {
+    const found = kids.find((p) => p.id === id);
+    if (found) return found;
+  }
+  return undefined;
+}
+
+function collectDescendantIds(
+  pointId: string,
+  roots: Point[],
+  childrenMap: Record<string, Point[]>,
+): string[] {
+  const point = findPoint(pointId, roots, childrenMap);
+  if (!point) return [];
+
+  const ids: string[] = [];
+  const walk = (parent: Point) => {
+    const childIds =
+      childrenMap[parent.id]?.map((c) => c.id) ?? parent.childIds;
+    for (const id of childIds) {
+      ids.push(id);
+      const child = findPoint(id, roots, childrenMap);
+      if (child) walk(child);
+    }
+  };
+  walk(point);
+  return ids;
+}
+
+async function ensureSubtreeLoaded(
+  areaId: string,
+  rootId: string,
+  roots: Point[],
+  childrenMap: Record<string, Point[]>,
+  setChildrenMap: React.Dispatch<
+    React.SetStateAction<Record<string, Point[]>>
+  >,
+): Promise<void> {
+  const map = { ...childrenMap };
+  const queue = [rootId];
+  const loaded: Record<string, Point[]> = {};
+
+  while (queue.length) {
+    const id = queue.shift()!;
+    const point = findPoint(id, roots, map);
+    if (!point?.childIds.length) continue;
+
+    if (!map[id]) {
+      const kids = await api.listPoints(areaId, id);
+      map[id] = kids;
+      loaded[id] = kids;
+    }
+    for (const kid of map[id]) {
+      if (kid.childIds.length > 0) queue.push(kid.id);
+    }
+  }
+
+  if (Object.keys(loaded).length > 0) {
+    setChildrenMap((m) => ({ ...m, ...loaded }));
+  }
+}
+
 function buildAncestorSet(
   selectedId: string | null,
   roots: Point[],
@@ -198,15 +268,89 @@ export function OutlineTree({
     reloadRoots();
   };
 
-  const toggleCollapse = (id: string, e: React.MouseEvent) => {
+  const isRowCollapsed = (id: string, hasChildren: boolean) =>
+    collapsed.has(id) ||
+    (!isToday && hasChildren && !childrenMap[id]);
+
+  const applyMove = React.useCallback(
+    async (
+      pointId: string,
+      parentId: string | null,
+      afterId: string | null | undefined,
+      expandIds: string[],
+      oldParentId: string | null,
+    ) => {
+      const idsToExpand = expandIds.filter((id) => {
+        const point = findPoint(id, roots, childrenMap);
+        if (!point) return false;
+        const kids = childrenMap[id] ?? [];
+        const hasChildren = isToday
+          ? kids.length > 0
+          : point.childIds.length > 0;
+        return isRowCollapsed(id, hasChildren);
+      });
+
+      await api.movePoint(pointId, { parentId, afterId });
+
+      for (const id of idsToExpand) {
+        setCollapsed((prev) => {
+          const next = new Set(prev);
+          next.delete(id);
+          return next;
+        });
+      }
+
+      if (isToday && since) {
+        const tree = await loadTodayTree(since);
+        setRoots(tree.roots);
+        setChildrenMap(tree.childrenMap);
+        setTouchedIds(tree.touchedIds);
+      } else {
+        if (oldParentId === null || parentId === null) {
+          const list = await api.listPoints(areaId, null);
+          setRoots(list);
+        }
+        const parentsToReload = new Set<string>();
+        if (parentId) parentsToReload.add(parentId);
+        if (oldParentId) parentsToReload.add(oldParentId);
+        await Promise.all(
+          [...parentsToReload].map((id) => loadChildren(id)),
+        );
+        for (const id of idsToExpand) {
+          if (!childrenMap[id]) await loadChildren(id);
+        }
+      }
+
+      onSelect(pointId);
+      onPointsChanged?.();
+    },
+    [
+      roots,
+      childrenMap,
+      collapsed,
+      isToday,
+      since,
+      areaId,
+      loadChildren,
+      onSelect,
+      onPointsChanged,
+    ],
+  );
+
+  const toggleCollapse = (
+    id: string,
+    hasChildren: boolean,
+    e: React.MouseEvent,
+  ) => {
     e.stopPropagation();
+    const wasCollapsed = isRowCollapsed(id, hasChildren);
     setCollapsed((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
+      if (wasCollapsed) next.delete(id);
       else next.add(id);
       return next;
     });
-    if (!isToday && !childrenMap[id]) void loadChildren(id);
+    if (wasCollapsed && !isToday && !childrenMap[id]) void loadChildren(id);
   };
 
   const visibleRows = React.useMemo(() => {
@@ -230,7 +374,7 @@ export function OutlineTree({
           touched: !isToday || touchedIds.has(point.id),
           guides: [],
         });
-        if (hasChildren && !collapsed.has(point.id)) {
+        if (hasChildren && !isRowCollapsed(point.id, hasChildren)) {
           walk(kids.length ? kids : [], depth + 1, point.id);
         }
       }
@@ -275,9 +419,52 @@ export function OutlineTree({
         onSelect(visibleRows[next].point.id);
         return;
       }
+      const mod = e.metaKey || e.ctrlKey;
+
+      if (mod && e.key === 'ArrowRight' && focused) {
+        e.preventDefault();
+        const descendantIds = collectDescendantIds(
+          focused.id,
+          roots,
+          childrenMap,
+        );
+        setCollapsed((prev) => {
+          const next = new Set(prev);
+          next.delete(focused.id);
+          for (const id of descendantIds) next.delete(id);
+          return next;
+        });
+        if (!isToday) {
+          void ensureSubtreeLoaded(
+            areaId,
+            focused.id,
+            roots,
+            childrenMap,
+            setChildrenMap,
+          );
+        }
+        return;
+      }
+      if (mod && e.key === 'ArrowLeft' && focused) {
+        e.preventDefault();
+        const descendantIds = collectDescendantIds(
+          focused.id,
+          roots,
+          childrenMap,
+        );
+        setCollapsed((prev) => {
+          const next = new Set(prev);
+          next.add(focused.id);
+          for (const id of descendantIds) next.add(id);
+          return next;
+        });
+        return;
+      }
+
       if (e.key === 'ArrowRight' && focused) {
         e.preventDefault();
-        if (collapsed.has(focused.id)) {
+        const hasKids = focused.childIds.length > 0;
+        if (isRowCollapsed(focused.id, hasKids)) {
           setCollapsed((prev) => {
             const next = new Set(prev);
             next.delete(focused.id);
@@ -289,14 +476,61 @@ export function OutlineTree({
       }
       if (e.key === 'ArrowLeft' && focused) {
         e.preventDefault();
-        if (!collapsed.has(focused.id) && focused.childIds.length > 0) {
+        const hasKids = focused.childIds.length > 0;
+        if (!isRowCollapsed(focused.id, hasKids)) {
           setCollapsed((prev) => new Set(prev).add(focused.id));
         }
+        return;
+      }
+
+      if (isToday) return;
+
+      const row = visibleRows[focusIndex];
+      if (!row) return;
+
+      if (e.key === 'Tab' && !e.shiftKey) {
+        const sibIdx = row.siblings.findIndex((s) => s.id === row.point.id);
+        if (sibIdx <= 0) return;
+        e.preventDefault();
+        const prevSibling = row.siblings[sibIdx - 1];
+        void applyMove(
+          row.point.id,
+          prevSibling.id,
+          undefined,
+          [prevSibling.id],
+          row.parentId,
+        );
+        return;
+      }
+
+      if (e.key === 'Tab' && e.shiftKey) {
+        if (!row.parentId) return;
+        e.preventDefault();
+        void (async () => {
+          const { point: parent } = await api.getPoint(row.parentId!);
+          await applyMove(
+            row.point.id,
+            parent.parentId,
+            parent.id,
+            [parent.id, ...(parent.parentId ? [parent.parentId] : [])],
+            row.parentId,
+          );
+        })();
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [visibleRows, focusIndex, collapsed, childrenMap, onSelect, isToday]);
+  }, [
+    visibleRows,
+    focusIndex,
+    collapsed,
+    childrenMap,
+    roots,
+    areaId,
+    onSelect,
+    isToday,
+    applyMove,
+  ]);
 
   const onDragStart = (
     e: React.DragEvent,
@@ -357,7 +591,7 @@ export function OutlineTree({
           !selectedId ||
           branchAncestors.has(point.id) ||
           point.id === selectedId;
-        const isCollapsed = collapsed.has(point.id);
+        const isCollapsed = isRowCollapsed(point.id, hasChildren);
         const areaLabel = areaNames?.[point.areaId];
 
         return (
@@ -389,14 +623,6 @@ export function OutlineTree({
             onClick={() => {
               setFocusIndex(index);
               onSelect(point.id);
-              if (!isToday && hasChildren && !childrenMap[point.id]) {
-                void loadChildren(point.id);
-              }
-            }}
-            onMouseEnter={() => {
-              if (!isToday && hasChildren && !childrenMap[point.id]) {
-                void loadChildren(point.id);
-              }
             }}
           >
             {guides.map((show, level) => (
@@ -420,7 +646,7 @@ export function OutlineTree({
                   type="button"
                   className="flex size-5 cursor-pointer items-center justify-center text-foreground/70 hover:text-foreground"
                   aria-label={isCollapsed ? 'Expand' : 'Collapse'}
-                  onClick={(e) => toggleCollapse(point.id, e)}
+                  onClick={(e) => toggleCollapse(point.id, hasChildren, e)}
                 >
                   {isCollapsed ? (
                     <IconChevronRightSmall size={16} ariaHidden />

@@ -278,7 +278,7 @@ export default function App() {
         'mb-px flex w-full cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-left text-13 transition-colors',
         selectedAreaId === a.id
           ? 'bg-accent text-foreground'
-          : 'text-muted-foreground hover:bg-accent/80 hover:text-foreground',
+          : 'text-muted-foreground hover:bg-neutral-100 hover:text-foreground [data-theme=dark]:hover:bg-neutral-700',
       )}
       onClick={() => void selectArea(a.id)}
     >
