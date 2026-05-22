@@ -7,12 +7,20 @@ import { IconLoader } from '@central-icons-react/round-filled-radius-3-stroke-1/
 import { api } from '../api';
 import { InlineRename } from './InlineRename';
 import { StateBadge } from './state-badge';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
 
 type Props = {
   areaId: string;
   selectedId: string | null;
-  onSelect: (id: string) => void;
+  onSelect: (id: string | null) => void;
   refreshKey: number;
   runningPointIds?: Set<string>;
   onPointsChanged?: () => void;
@@ -131,6 +139,93 @@ function patchChildrenMapAfterMove(
   return { roots: nextRoots, childrenMap: nextMap };
 }
 
+function isDescendantOf(
+  id: string,
+  ancestorId: string,
+  roots: Point[],
+  childrenMap: Record<string, Point[]>,
+): boolean {
+  let current = findPoint(id, roots, childrenMap);
+  while (current?.parentId) {
+    if (current.parentId === ancestorId) return true;
+    current = findPoint(current.parentId, roots, childrenMap);
+  }
+  return false;
+}
+
+function topLevelDeleteIds(
+  ids: string[],
+  roots: Point[],
+  childrenMap: Record<string, Point[]>,
+): string[] {
+  if (ids.length <= 1) return ids;
+  return ids.filter(
+    (id) =>
+      !ids.some(
+        (other) => other !== id && isDescendantOf(id, other, roots, childrenMap),
+      ),
+  );
+}
+
+function collectAllRemovedIds(
+  ids: string[],
+  roots: Point[],
+  childrenMap: Record<string, Point[]>,
+): Set<string> {
+  const removed = new Set<string>();
+  for (const id of ids) {
+    removed.add(id);
+    for (const desc of collectDescendantIds(id, roots, childrenMap)) {
+      removed.add(desc);
+    }
+  }
+  return removed;
+}
+
+/** Drop deleted points from roots and parent child lists (childrenMap keys are parent ids). */
+function applyRemovedPointsToTree(
+  roots: Point[],
+  childrenMap: Record<string, Point[]>,
+  removedIds: Set<string>,
+): { roots: Point[]; childrenMap: Record<string, Point[]> } {
+  const stripChildIds = (p: Point): Point => ({
+    ...p,
+    childIds: p.childIds.filter((id) => !removedIds.has(id)),
+  });
+
+  const nextRoots = roots
+    .filter((p) => !removedIds.has(p.id))
+    .map(stripChildIds);
+
+  const nextMap: Record<string, Point[]> = {};
+  for (const [parentId, kids] of Object.entries(childrenMap)) {
+    if (removedIds.has(parentId)) continue;
+    const filtered = kids
+      .filter((c) => !removedIds.has(c.id))
+      .map(stripChildIds);
+    if (filtered.length > 0) nextMap[parentId] = filtered;
+  }
+
+  return { roots: nextRoots, childrenMap: nextMap };
+}
+
+function pickNeighborAfterDelete(
+  visibleRows: VisibleRow[],
+  focusIndex: number,
+  removedIds: Set<string>,
+): { primaryId: string | null; focusIdx: number } {
+  const start = Math.min(focusIndex, visibleRows.length - 1);
+  for (let i = start; i >= 0; i--) {
+    const id = visibleRows[i]?.point.id;
+    if (id && !removedIds.has(id)) return { primaryId: id, focusIdx: i };
+  }
+  for (let i = start + 1; i < visibleRows.length; i++) {
+    const id = visibleRows[i]?.point.id;
+    if (id && !removedIds.has(id)) return { primaryId: id, focusIdx: i };
+  }
+  return { primaryId: null, focusIdx: 0 };
+}
+
 function collectDescendantIds(
   pointId: string,
   roots: Point[],
@@ -184,6 +279,55 @@ async function ensureSubtreeLoaded(
   if (Object.keys(loaded).length > 0) {
     setChildrenMap((m) => ({ ...m, ...loaded }));
   }
+}
+
+type MultiSelectRadiusRole = 'single' | 'start' | 'end' | 'middle';
+
+/** Contiguous runs in `visibleRows` for multi-select row corner styling. */
+function buildMultiSelectRadiusRoles(
+  rows: VisibleRow[],
+  selected: Set<string>,
+): Map<string, MultiSelectRadiusRole> {
+  const roles = new Map<string, MultiSelectRadiusRole>();
+  if (selected.size < 2) return roles;
+
+  let runStart = -1;
+  const flushRun = (runEnd: number) => {
+    if (runStart < 0) return;
+    const len = runEnd - runStart + 1;
+    for (let i = runStart; i <= runEnd; i++) {
+      const id = rows[i].point.id;
+      if (len === 1) roles.set(id, 'single');
+      else if (i === runStart) roles.set(id, 'start');
+      else if (i === runEnd) roles.set(id, 'end');
+      else roles.set(id, 'middle');
+    }
+    runStart = -1;
+  };
+
+  for (let i = 0; i < rows.length; i++) {
+    if (selected.has(rows[i].point.id)) {
+      if (runStart < 0) runStart = i;
+    } else if (runStart >= 0) {
+      flushRun(i - 1);
+    }
+  }
+  if (runStart >= 0) flushRun(rows.length - 1);
+  return roles;
+}
+
+function idsInVisibleRange(
+  rows: VisibleRow[],
+  anchorIndex: number,
+  endIndex: number,
+): string[] {
+  const lo = Math.min(anchorIndex, endIndex);
+  const hi = Math.max(anchorIndex, endIndex);
+  const ids: string[] = [];
+  for (let i = lo; i <= hi; i++) {
+    ids.push(rows[i].point.id);
+  }
+  return ids;
 }
 
 function buildAncestorSet(
@@ -261,7 +405,7 @@ export function OutlineTree({
   areaId,
   selectedId,
   onSelect,
-  refreshKey,
+  refreshKey: _refreshKey,
   runningPointIds,
   onPointsChanged,
   mode = 'area',
@@ -278,8 +422,34 @@ export function OutlineTree({
   const [collapsed, setCollapsed] = React.useState<Set<string>>(() => new Set());
   const [dragOverId, setDragOverId] = React.useState<string | null>(null);
   const [focusIndex, setFocusIndex] = React.useState(0);
+  const [selectedIds, setSelectedIds] = React.useState<Set<string>>(
+    () => new Set(),
+  );
+  const [renamingPointId, setRenamingPointId] = React.useState<string | null>(
+    null,
+  );
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = React.useState(false);
+  const [pendingDeleteIds, setPendingDeleteIds] = React.useState<string[]>([]);
+  const selectionAnchorRef = React.useRef(0);
+  const skipSelectionSyncRef = React.useRef(false);
   const dragId = React.useRef<string | null>(null);
   const dragParentId = React.useRef<string | null>(null);
+
+  const applySelection = React.useCallback(
+    (
+      ids: string[],
+      primaryId: string,
+      focusIdx: number,
+      moveAnchor = true,
+    ) => {
+      skipSelectionSyncRef.current = ids.length > 1;
+      setSelectedIds(new Set(ids));
+      if (moveAnchor) selectionAnchorRef.current = focusIdx;
+      setFocusIndex(focusIdx);
+      onSelect(primaryId);
+    },
+    [onSelect],
+  );
 
   const reloadRoots = React.useCallback(() => {
     if (isToday && since) {
@@ -303,7 +473,7 @@ export function OutlineTree({
 
   React.useEffect(() => {
     reloadRoots();
-  }, [areaId, refreshKey, reloadRoots]);
+  }, [areaId, reloadRoots]);
 
   const loadChildren = async (parentId: string) => {
     if (isToday) return;
@@ -460,15 +630,183 @@ export function OutlineTree({
     }));
   }, [roots, childrenMap, collapsed, isToday, touchedIds]);
 
+  const selectSingle = React.useCallback(
+    (index: number) => {
+      const id = visibleRows[index]?.point.id;
+      if (!id) return;
+      applySelection([id], id, index);
+    },
+    [visibleRows, applySelection],
+  );
+
+  const extendSelectionTo = React.useCallback(
+    (index: number, primaryId?: string) => {
+      const row = visibleRows[index];
+      if (!row) return;
+      const ids = idsInVisibleRange(
+        visibleRows,
+        selectionAnchorRef.current,
+        index,
+      );
+      applySelection(ids, primaryId ?? row.point.id, index, false);
+    },
+    [visibleRows, applySelection],
+  );
+
+  const multiSelect = selectedIds.size > 1;
+
+  const multiSelectRadiusRoles = React.useMemo(
+    () => buildMultiSelectRadiusRoles(visibleRows, selectedIds),
+    [visibleRows, selectedIds],
+  );
+
+  /** Opt+N: child of primary selection (`selectedId`); order uses keyboard-focused row. */
+  const selectedIdsForDelete = React.useCallback((): string[] => {
+    if (selectedIds.size > 0) return [...selectedIds];
+    if (selectedId) return [selectedId];
+    return [];
+  }, [selectedIds, selectedId]);
+
+  const performDelete = React.useCallback(
+    async (rawIds: string[]) => {
+      if (isToday || rawIds.length === 0) return;
+
+      const topLevel = topLevelDeleteIds(rawIds, roots, childrenMap);
+      const removedIds = collectAllRemovedIds(topLevel, roots, childrenMap);
+      const { primaryId, focusIdx } = pickNeighborAfterDelete(
+        visibleRows,
+        focusIndex,
+        removedIds,
+      );
+
+      for (const id of topLevel) {
+        await api.deletePoint(id);
+      }
+
+      const pruned = applyRemovedPointsToTree(roots, childrenMap, removedIds);
+      setRoots(pruned.roots);
+      setChildrenMap(pruned.childrenMap);
+
+      if (primaryId) {
+        applySelection([primaryId], primaryId, focusIdx);
+      } else {
+        skipSelectionSyncRef.current = true;
+        setSelectedIds(new Set());
+        setFocusIndex(0);
+        onSelect(null);
+      }
+
+      onPointsChanged?.();
+    },
+    [
+      isToday,
+      roots,
+      childrenMap,
+      visibleRows,
+      focusIndex,
+      applySelection,
+      onSelect,
+      onPointsChanged,
+    ],
+  );
+
+  const quickCreateChild = React.useCallback(async () => {
+    if (isToday || !selectedId) return;
+
+    const parentId = selectedId;
+    const parent = findPoint(parentId, roots, childrenMap);
+    if (!parent) return;
+
+    const focusedRow = visibleRows[focusIndex];
+    const afterSiblingId =
+      focusedRow?.parentId === parentId ? focusedRow.point.id : null;
+    const insertFirst =
+      afterSiblingId == null &&
+      (focusedRow?.point.id === parentId ||
+        (childrenMap[parentId]?.length ?? parent.childIds.length) === 0);
+
+    const hasChildren = parent.childIds.length > 0;
+    if (isRowCollapsed(parentId, hasChildren)) {
+      setCollapsed((prev) => {
+        const next = new Set(prev);
+        next.delete(parentId);
+        return next;
+      });
+      if (!childrenMap[parentId]) await loadChildren(parentId);
+    }
+
+    const point = await api.createPoint({
+      task: 'Untitled',
+      areaId,
+      parentId,
+    });
+
+    if (afterSiblingId) {
+      await api.movePoint(point.id, { parentId, afterId: afterSiblingId });
+    } else if (
+      insertFirst &&
+      (childrenMap[parentId]?.length ?? parent.childIds.length) > 0
+    ) {
+      const kids = await api.listPoints(areaId, parentId);
+      await api.reorderChildren(parentId, [
+        point.id,
+        ...kids.filter((c) => c.id !== point.id).map((c) => c.id),
+      ]);
+    }
+
+    const kids = await api.listPoints(areaId, parentId);
+    setChildrenMap((m) => ({ ...m, [parentId]: kids }));
+
+    let idx = focusIndex;
+    if (afterSiblingId) {
+      const sibIdx = visibleRows.findIndex((r) => r.point.id === afterSiblingId);
+      if (sibIdx >= 0) idx = sibIdx + 1;
+    } else {
+      const parentIdx = visibleRows.findIndex((r) => r.point.id === parentId);
+      if (parentIdx >= 0) idx = parentIdx + 1;
+    }
+
+    applySelection([point.id], point.id, idx);
+    setRenamingPointId(point.id);
+    reloadRoots();
+    onPointsChanged?.();
+  }, [
+    isToday,
+    selectedId,
+    roots,
+    childrenMap,
+    visibleRows,
+    focusIndex,
+    areaId,
+    collapsed,
+    applySelection,
+    reloadRoots,
+    onPointsChanged,
+  ]);
+
   const branchAncestors = React.useMemo(
     () => buildAncestorSet(selectedId, roots, childrenMap),
     [selectedId, roots, childrenMap],
   );
 
   React.useEffect(() => {
-    if (!selectedId) return;
+    if (skipSelectionSyncRef.current) {
+      skipSelectionSyncRef.current = false;
+      return;
+    }
+    if (!selectedId) {
+      setSelectedIds(new Set());
+      return;
+    }
     const idx = visibleRows.findIndex((r) => r.point.id === selectedId);
-    if (idx >= 0) setFocusIndex(idx);
+    if (idx >= 0) {
+      setFocusIndex(idx);
+      selectionAnchorRef.current = idx;
+    }
+    setSelectedIds((prev) => {
+      if (prev.size === 1 && prev.has(selectedId)) return prev;
+      return new Set([selectedId]);
+    });
   }, [selectedId, visibleRows]);
 
   React.useEffect(() => {
@@ -482,15 +820,15 @@ export function OutlineTree({
       if (e.key === 'j' || e.key === 'ArrowDown') {
         e.preventDefault();
         const next = Math.min(focusIndex + 1, visibleRows.length - 1);
-        setFocusIndex(next);
-        onSelect(visibleRows[next].point.id);
+        if (e.shiftKey) extendSelectionTo(next);
+        else selectSingle(next);
         return;
       }
       if (e.key === 'k' || e.key === 'ArrowUp') {
         e.preventDefault();
         const next = Math.max(focusIndex - 1, 0);
-        setFocusIndex(next);
-        onSelect(visibleRows[next].point.id);
+        if (e.shiftKey) extendSelectionTo(next);
+        else selectSingle(next);
         return;
       }
       const mod = e.metaKey || e.ctrlKey;
@@ -559,6 +897,29 @@ export function OutlineTree({
 
       if (isToday) return;
 
+      const isDeleteKey = e.key === 'Delete' || e.key === 'Backspace';
+      if (isDeleteKey && !e.altKey && !e.shiftKey) {
+        if (renamingPointId) return;
+        const ids = selectedIdsForDelete();
+        if (!ids.length) return;
+        e.preventDefault();
+        if (mod) {
+          void performDelete(ids);
+        } else {
+          setPendingDeleteIds(ids);
+          setDeleteConfirmOpen(true);
+        }
+        return;
+      }
+
+      // macOS Option+N often yields a dead/special `key`; `code` stays KeyN.
+      if (e.altKey && !mod && e.code === 'KeyN') {
+        if (!selectedId) return;
+        e.preventDefault();
+        void quickCreateChild();
+        return;
+      }
+
       const row = visibleRows[focusIndex];
       if (!row) return;
 
@@ -611,9 +972,15 @@ export function OutlineTree({
     childrenMap,
     roots,
     areaId,
-    onSelect,
+    selectSingle,
+    extendSelectionTo,
     isToday,
     applyMove,
+    selectedId,
+    quickCreateChild,
+    renamingPointId,
+    selectedIdsForDelete,
+    performDelete,
   ]);
 
   const onDragStart = (
@@ -655,26 +1022,82 @@ export function OutlineTree({
         <div className="px-2 py-12 text-center text-13 text-muted-foreground">
           <p>{isToday ? 'Nothing worked on yet today' : 'No tasks'}</p>
           {!isToday ? (
-            <p className="mt-1 text-12">⌘N to create · j/k to navigate</p>
+            <p className="mt-1 text-12">
+              ⌘N new task · ⌥N child · j/k navigate · Delete remove · ⌘Delete
+              remove without confirm
+            </p>
           ) : null}
         </div>
       </div>
     );
   }
 
+  const deleteCount = pendingDeleteIds.length;
+  const deletePreview =
+    deleteCount === 1
+      ? (findPoint(pendingDeleteIds[0]!, roots, childrenMap)?.task ?? 'this task')
+      : `${deleteCount} tasks`;
+
   return (
-    <div className="px-1 pb-1 pt-3" role="tree">
+    <>
+      <Dialog
+        open={deleteConfirmOpen}
+        onOpenChange={(open) => {
+          setDeleteConfirmOpen(open);
+          if (!open) setPendingDeleteIds([]);
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {deleteCount === 1 ? 'Delete task?' : `Delete ${deleteCount} tasks?`}
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            {deleteCount === 1
+              ? `“${deletePreview}” will be removed permanently, including any subtasks.`
+              : `${deletePreview} will be removed permanently, including any subtasks.`}
+          </p>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setDeleteConfirmOpen(false);
+                setPendingDeleteIds([]);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={() => {
+                const ids = pendingDeleteIds;
+                setDeleteConfirmOpen(false);
+                setPendingDeleteIds([]);
+                void performDelete(ids);
+              }}
+            >
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <div className="px-1 pb-1 pt-3" role="tree">
       {visibleRows.map((row, index) => {
         const { point, parentId, siblings, hasChildren, touched, guides } = row;
         const branch =
           typeof point.meta?.branch === 'string'
             ? point.meta.branch.trim()
             : '';
-        const isSelected = selectedId === point.id;
+        const isInSelection = selectedIds.has(point.id);
+        const multiSelectRadiusRole = multiSelectRadiusRoles.get(point.id);
         const inBranch =
           !selectedId ||
+          multiSelect ||
           branchAncestors.has(point.id) ||
-          point.id === selectedId;
+          isInSelection;
         const isCollapsed = isRowCollapsed(point.id, hasChildren);
         const areaLabel = areaNames?.[point.areaId];
 
@@ -683,11 +1106,25 @@ export function OutlineTree({
             key={point.id}
             role="treeitem"
             className={cn(
-              'outline-row group flex cursor-pointer items-stretch gap-1 rounded-sm pr-2 pl-2 text-13',
-              isSelected && 'bg-accent text-foreground',
-              !isSelected && 'text-foreground hover:bg-accent/50',
+              'outline-row group flex cursor-pointer items-stretch gap-1 pr-2 pl-2 text-13',
+              multiSelect && isInSelection
+                ? multiSelectRadiusRole === 'start'
+                  ? 'rounded-t-sm'
+                  : multiSelectRadiusRole === 'end'
+                    ? 'rounded-b-sm'
+                    : multiSelectRadiusRole === 'middle'
+                      ? 'rounded-none'
+                      : 'rounded-sm'
+                : 'rounded-sm',
+              isInSelection &&
+                multiSelect &&
+                'bg-selection text-selection-foreground',
+              isInSelection &&
+                !multiSelect &&
+                'bg-accent text-foreground',
+              !isInSelection && 'text-foreground hover:bg-accent/50',
               dragOverId === point.id && 'bg-muted',
-              inBranch && selectedId && 'focused-branch',
+              inBranch && selectedId && !multiSelect && 'focused-branch',
               isToday && !touched && 'opacity-60',
             )}
             draggable={!isToday}
@@ -704,9 +1141,12 @@ export function OutlineTree({
             onDrop={
               isToday ? undefined : (e) => onDropOn(e, point, siblings, parentId)
             }
-            onClick={() => {
-              setFocusIndex(index);
-              onSelect(point.id);
+            onClick={(e) => {
+              if (e.shiftKey) {
+                extendSelectionTo(index, point.id);
+                return;
+              }
+              selectSingle(index);
             }}
           >
             {guides.map((show, level) => (
@@ -721,7 +1161,7 @@ export function OutlineTree({
             <div
               className={cn(
                 'outline-row-content flex min-w-0 flex-1 items-center gap-1 py-1.5',
-                selectedId && !inBranch && 'dimmed',
+                selectedId && !multiSelect && !inBranch && 'dimmed',
               )}
             >
             <span className="flex size-5 shrink-0 items-center justify-center">
@@ -745,6 +1185,12 @@ export function OutlineTree({
               value={point.task}
               aria-label={`Rename task ${point.task}`}
               className="min-w-0 flex-1"
+              startEditing={renamingPointId === point.id}
+              onEditingChange={(editing) => {
+                if (!editing && renamingPointId === point.id) {
+                  setRenamingPointId(null);
+                }
+              }}
               onSave={async (task) => {
                 await api.updatePoint(point.id, { task });
                 reloadRoots();
@@ -801,5 +1247,6 @@ export function OutlineTree({
         );
       })}
     </div>
+    </>
   );
 }

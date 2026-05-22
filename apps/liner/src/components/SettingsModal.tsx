@@ -365,6 +365,18 @@ export function SettingsModal({
                     <tr>
                       <td>
                         <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-xs">
+                          ⌥
+                        </kbd>{' '}
+                        +{' '}
+                        <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-xs">
+                          N
+                        </kbd>
+                      </td>
+                      <td>New child task (outline)</td>
+                    </tr>
+                    <tr>
+                      <td>
+                        <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-xs">
                           ⌘
                         </kbd>{' '}
                         +{' '}
@@ -385,6 +397,34 @@ export function SettingsModal({
                         </kbd>
                       </td>
                       <td>Navigate outline</td>
+                    </tr>
+                    <tr>
+                      <td>
+                        <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-xs">
+                          Delete
+                        </kbd>{' '}
+                        /{' '}
+                        <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-xs">
+                          ⌫
+                        </kbd>
+                      </td>
+                      <td>Delete selected task(s) (confirm)</td>
+                    </tr>
+                    <tr>
+                      <td>
+                        <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-xs">
+                          ⌘
+                        </kbd>{' '}
+                        +{' '}
+                        <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-xs">
+                          Delete
+                        </kbd>{' '}
+                        /{' '}
+                        <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-xs">
+                          ⌘⌫
+                        </kbd>
+                      </td>
+                      <td>Delete selected task(s) immediately</td>
                     </tr>
                     <tr>
                       <td>

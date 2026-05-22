@@ -10,6 +10,9 @@ type Props = {
   'aria-label'?: string;
   /** Matches surrounding text metrics to prevent layout jump */
   size?: 'sm' | 'lg';
+  /** When true, open the rename field (e.g. after quick-create). */
+  startEditing?: boolean;
+  onEditingChange?: (editing: boolean) => void;
 };
 
 const sizeMetrics = {
@@ -25,15 +28,31 @@ export function InlineRename({
   placeholder,
   'aria-label': ariaLabel,
   size = 'sm',
+  startEditing = false,
+  onEditingChange,
 }: Props) {
   const [editing, setEditing] = React.useState(false);
   const [draft, setDraft] = React.useState(value);
   const inputRef = React.useRef<HTMLInputElement>(null);
   const metrics = sizeMetrics[size];
 
+  const setEditingState = React.useCallback(
+    (next: boolean) => {
+      setEditing(next);
+      onEditingChange?.(next);
+    },
+    [onEditingChange],
+  );
+
   React.useEffect(() => {
     if (!editing) setDraft(value);
   }, [value, editing]);
+
+  React.useEffect(() => {
+    if (!startEditing) return;
+    setDraft(value);
+    setEditingState(true);
+  }, [startEditing, setEditingState]);
 
   React.useEffect(() => {
     if (editing) {
@@ -44,12 +63,12 @@ export function InlineRename({
 
   const cancel = () => {
     setDraft(value);
-    setEditing(false);
+    setEditingState(false);
   };
 
   const commit = async () => {
     const trimmed = draft.trim();
-    setEditing(false);
+    setEditingState(false);
     if (!trimmed) {
       setDraft(value);
       return;
@@ -62,7 +81,7 @@ export function InlineRename({
     e.stopPropagation();
     e.preventDefault();
     setDraft(value);
-    setEditing(true);
+    setEditingState(true);
   };
 
   return (
@@ -88,9 +107,8 @@ export function InlineRename({
           aria-label={ariaLabel ?? 'Rename'}
           placeholder={placeholder}
           className={cn(
-            'absolute inset-0 box-border w-full min-w-0 appearance-none border-0 bg-transparent p-0 font-[inherit] text-inherit outline-none',
+            'absolute inset-0 box-border w-full min-w-0 appearance-none border-0 bg-transparent p-0 font-[inherit] text-inherit shadow-none outline-none ring-0 focus:shadow-none focus:outline-none focus:ring-0 focus-visible:shadow-none focus-visible:outline-none focus-visible:ring-0',
             metrics,
-            'shadow-[inset_0_0_0_1px_var(--border)] focus-visible:shadow-[inset_0_0_0_1px_var(--ring)]',
             inputClassName,
           )}
           onClick={(e) => e.stopPropagation()}

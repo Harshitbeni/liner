@@ -120,7 +120,7 @@ export default function App() {
     }
   }, [areas]);
 
-  const selectPoint = (id: string) => {
+  const selectPoint = (id: string | null) => {
     setSelectedPointId(id);
     if (selectedAreaId) saveSelectedPointId(selectedAreaId, id);
   };

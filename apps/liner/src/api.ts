@@ -226,6 +226,8 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify(input),
     }),
+  deletePoint: (id: string) =>
+    request<{ ok: boolean }>(`/points/${id}`, { method: 'DELETE' }),
   ensureSession: (id: string) =>
     request<{ sessionId: string }>(`/points/${id}/session`, { method: 'POST' }),
   getMessages: (id: string) => request<ThreadMessage[]>(`/points/${id}/messages`),

@@ -598,6 +598,17 @@ try {
           return json({ point, children });
         }
 
+        if (path.startsWith('/points/') && req.method === 'DELETE') {
+          const segments = path.split('/').filter(Boolean);
+          if (segments.length !== 2) {
+            return json({ error: 'Not found' }, 404);
+          }
+          const id = segments[1];
+          const deleted = store.deletePoint(id);
+          if (!deleted) return json({ error: 'Not found' }, 404);
+          return json({ ok: true });
+        }
+
         if (path.startsWith('/points/') && req.method === 'PATCH') {
           const segments = path.split('/').filter(Boolean);
           const id = segments[1];

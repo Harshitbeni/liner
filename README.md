@@ -82,7 +82,7 @@ See [docs/DOGFOOD.md](docs/DOGFOOD.md). Summary:
 
 - **Drag-reorder** child tasks in the outline (⋮⋮ handle)
 - **Selection persisted** in `localStorage` per area
-- **Keyboard:** ⌘N new task, P promote backlog→todo, A approve plan, S ship, X cancel
+- **Keyboard:** ⌘N new task, ⌥N child task (outline), Delete/⌫ delete selection (confirm), ⌘Delete/⌘⌫ delete without confirm, P promote backlog→todo, A approve plan, S ship, X cancel
 - **Thread streaming** via SSE (`/api/points/:id/events`) — incremental `text_delta` on agent cards
 - **@mentions** — 8 subagents + skills in composer autocomplete
 - **Auto agents** on state transitions (toggle in Settings)
