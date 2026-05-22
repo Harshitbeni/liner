@@ -6,15 +6,39 @@ import type {
   ThreadMessage,
 } from '@liner/core';
 
-const API_BASE =
-  import.meta.env.VITE_LINER_API ?? 'http://127.0.0.1:9240/api';
+function resolveApiBase(): string {
+  if (typeof window !== 'undefined' && window.liner?.apiBase) {
+    return window.liner.apiBase;
+  }
+  const env = import.meta.env.VITE_LINER_API;
+  if (env && String(env).length > 0) return String(env);
+  return 'http://127.0.0.1:9240/api';
+}
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+const API_BASE = resolveApiBase();
+
+const DEFAULT_REQUEST_TIMEOUT_MS = 15_000;
+
+function requestAbortSignal(timeoutMs: number): AbortSignal {
+  if (typeof AbortSignal.timeout === 'function') {
+    return AbortSignal.timeout(timeoutMs);
+  }
+  const controller = new AbortController();
+  setTimeout(() => controller.abort(), timeoutMs);
+  return controller.signal;
+}
+
+async function request<T>(
+  path: string,
+  init?: RequestInit & { timeoutMs?: number },
+): Promise<T> {
+  const { timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS, ...fetchInit } = init ?? {};
   const res = await fetch(`${API_BASE}${path}`, {
-    ...init,
+    ...fetchInit,
+    signal: requestAbortSignal(timeoutMs),
     headers: {
       'Content-Type': 'application/json',
-      ...init?.headers,
+      ...fetchInit.headers,
     },
   });
   if (!res.ok) {

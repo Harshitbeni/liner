@@ -24,6 +24,7 @@ import {
 import { cn } from '@/lib/utils';
 
 type Tab = 'general' | 'provider' | 'agents' | 'appearance' | 'shortcuts';
+type FetchStatus = 'idle' | 'loading' | 'ready' | 'error';
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'general', label: 'General' },
@@ -56,14 +57,62 @@ export function SettingsModal({
   const [subagents, setSubagents] = React.useState<
     Array<{ id: string; label: string; description: string }>
   >([]);
+  const [fetchStatus, setFetchStatus] = React.useState<FetchStatus>('idle');
+  const [fetchError, setFetchError] = React.useState<string | null>(null);
+  const [agentsError, setAgentsError] = React.useState<string | null>(null);
+
+  const formatLoadError = (e: unknown) => {
+    if (e instanceof Error) {
+      return e.name === 'TimeoutError' ? 'Request timed out — is the API running?' : e.message;
+    }
+    return String(e);
+  };
+
+  const loadData = React.useCallback(async () => {
+    setFetchStatus('loading');
+    setFetchError(null);
+    setAgentsError(null);
+
+    const [settingsResult, workspacesResult, subagentsResult] =
+      await Promise.allSettled([
+        api.getSettings(),
+        api.listWorkspaces(),
+        api.listSubagents(),
+      ]);
+
+    if (settingsResult.status !== 'fulfilled') {
+      setFetchError(formatLoadError(settingsResult.reason));
+      setFetchStatus('error');
+      return;
+    }
+
+    setSettings(settingsResult.value);
+    if (workspacesResult.status === 'fulfilled') {
+      setWorkspaces(workspacesResult.value);
+    } else {
+      setWorkspaces([]);
+    }
+    if (subagentsResult.status === 'fulfilled') {
+      setSubagents(subagentsResult.value);
+    } else {
+      setSubagents([]);
+      setAgentsError(formatLoadError(subagentsResult.reason));
+    }
+    setFetchStatus('ready');
+  }, []);
 
   React.useEffect(() => {
     if (open) {
-      api.getSettings().then(setSettings);
-      api.listWorkspaces().then(setWorkspaces);
-      api.listSubagents().then(setSubagents);
+      void loadData();
+    } else {
+      setSettings(null);
+      setWorkspaces([]);
+      setSubagents([]);
+      setFetchStatus('idle');
+      setFetchError(null);
+      setAgentsError(null);
     }
-  }, [open]);
+  }, [open, loadData]);
 
   const patch = async (p: Partial<LinerSettings>) => {
     const next = await api.updateSettings(p);
@@ -74,6 +123,27 @@ export function SettingsModal({
           ? 'dark'
           : 'light'
         : next.theme;
+  };
+
+  const settingsTabMessage = () => {
+    if (fetchStatus === 'loading') {
+      return (
+        <p className="text-sm text-muted-foreground">Loading settings…</p>
+      );
+    }
+    if (fetchStatus === 'error') {
+      return (
+        <div className="space-y-3">
+          <p className="text-sm text-destructive">
+            Could not load settings: {fetchError ?? 'Unknown error'}
+          </p>
+          <Button type="button" variant="secondary" onClick={() => void loadData()}>
+            Retry
+          </Button>
+        </div>
+      );
+    }
+    return null;
   };
 
   return (
@@ -102,7 +172,9 @@ export function SettingsModal({
           </nav>
           <ScrollArea className="min-h-[320px] flex-1">
             <div className="space-y-4 p-5">
-              {tab === 'general' && settings ? (
+              {tab === 'general' && fetchStatus !== 'ready' ? settingsTabMessage() : null}
+
+              {tab === 'general' && fetchStatus === 'ready' && settings ? (
                 <>
                   <div className="space-y-2">
                     <Label htmlFor="opencode-url">OpenCode API URL</Label>
@@ -210,7 +282,29 @@ export function SettingsModal({
                 />
               ) : null}
 
-              {tab === 'agents' ? (
+              {tab === 'agents' && fetchStatus === 'loading' ? (
+                <p className="text-sm text-muted-foreground">Loading agents…</p>
+              ) : null}
+
+              {tab === 'agents' && fetchStatus === 'ready' && agentsError ? (
+                <div className="space-y-3">
+                  <p className="text-sm text-destructive">
+                    Could not load agents: {agentsError}
+                  </p>
+                  <Button type="button" variant="secondary" onClick={() => void loadData()}>
+                    Retry
+                  </Button>
+                </div>
+              ) : null}
+
+              {tab === 'agents' &&
+              fetchStatus === 'ready' &&
+              !agentsError &&
+              subagents.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No agents registered.</p>
+              ) : null}
+
+              {tab === 'agents' && fetchStatus === 'ready' && subagents.length > 0 ? (
                 <ul className="m-0 list-none space-y-0 p-0">
                   {subagents.map((a) => (
                     <li
@@ -230,7 +324,9 @@ export function SettingsModal({
                 </ul>
               ) : null}
 
-              {tab === 'appearance' && settings ? (
+              {tab === 'appearance' && fetchStatus !== 'ready' ? settingsTabMessage() : null}
+
+              {tab === 'appearance' && fetchStatus === 'ready' && settings ? (
                 <div className="space-y-2">
                   <Label>Theme</Label>
                   <Select

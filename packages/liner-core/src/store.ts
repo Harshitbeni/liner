@@ -69,6 +69,7 @@ export class OutlineStore {
       const path = dbPath(workspaceId);
       mkdirSync(dirname(path), { recursive: true });
       this.db = new Database(path);
+      this.db.run('PRAGMA busy_timeout = 5000');
     }
     this.migrate();
   }

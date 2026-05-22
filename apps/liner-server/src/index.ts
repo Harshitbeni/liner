@@ -4,6 +4,7 @@ import {
   createLinerRuntime,
   createWorkspace,
   OpenCodeSessionRpcAdapter,
+  OutlineStore,
   getEngineInfo,
   isOpencodeServerReachable,
   isManagedEngineEnabled,
@@ -17,6 +18,9 @@ import {
   resolveBunExecutable,
   startManagedEngine,
   stopManagedEngine,
+  listSubagents,
+  listSkills,
+  verifyEngineConnection,
 } from '@liner/core';
 import type { AgentIntent, PointState, PointPriority } from '@liner/core';
 import { resolveMentions, prependQuote } from '@liner/core';
@@ -32,6 +36,7 @@ import {
 
 const PORT = Number(process.env.LINER_API_PORT ?? 9240);
 let runtime: Awaited<ReturnType<typeof createLinerRuntime>> | null = null;
+let runtimeInit: Promise<NonNullable<typeof runtime>> | null = null;
 let activeWorkspaceId =
   process.env.LINER_WORKSPACE_ID ?? 'default';
 
@@ -67,10 +72,19 @@ async function initRuntime(workspaceId?: string): Promise<NonNullable<typeof run
 
 async function getRuntime() {
   if (isManagedEngineEnabled()) await ensureEngineBoot();
-  if (!runtime) {
-    return initRuntime(activeWorkspaceId);
+  if (runtime) return runtime;
+  if (!runtimeInit) {
+    runtimeInit = initRuntime(activeWorkspaceId).finally(() => {
+      runtimeInit = null;
+    });
   }
-  return runtime;
+  return runtimeInit;
+}
+
+/** DB-only store for settings routes — no RPC connect required. */
+function getStore(): OutlineStore {
+  if (runtime) return runtime.store;
+  return new OutlineStore(activeWorkspaceId);
 }
 
 async function switchWorkspace(workspaceId: string) {
@@ -78,7 +92,10 @@ async function switchWorkspace(workspaceId: string) {
     throw new Error('Invalid workspace id');
   }
   harnessAgentBridgeInstalled = false;
-  return initRuntime(workspaceId);
+  runtimeInit = initRuntime(workspaceId).finally(() => {
+    runtimeInit = null;
+  });
+  return runtimeInit;
 }
 
 async function buildHealthLight(): Promise<{
@@ -321,6 +338,37 @@ try {
           return json(await buildHealth(rt));
         }
 
+        if (path === '/subagents' && req.method === 'GET') {
+          return json(listSubagents());
+        }
+
+        if (path === '/settings' && req.method === 'GET') {
+          return json(getStore().getSettings());
+        }
+
+        if (path === '/settings' && req.method === 'PATCH') {
+          const body = await parseBody(req);
+          return json(
+            getStore().setSettings(
+              body as Parameters<OutlineStore['setSettings']>[0],
+            ),
+          );
+        }
+
+        if (path === '/workspaces' && req.method === 'GET') {
+          return json(listWorkspaces(activeWorkspaceId));
+        }
+
+        if (path === '/provider' && req.method === 'GET') {
+          const settings = getStore().getSettings();
+          const auth = readLinerAuth();
+          return json({
+            providers: PROVIDER_OPTIONS,
+            selectedProviderId: settings.aiProviderId,
+            auth,
+          });
+        }
+
         if (isManagedEngineEnabled()) await ensureEngineBoot();
         const rt = await getRuntime();
         const { store, rpc, harness } = rt;
@@ -343,7 +391,6 @@ try {
             harnessAgentBridgeInstalled = false;
             await initRuntime(activeWorkspaceId);
           }
-          const { verifyEngineConnection } = await import('@liner/core');
           const rtFresh = await getRuntime();
           const freshSettings = rtFresh.store.getSettings();
           const result = await verifyEngineConnection({
@@ -353,16 +400,6 @@ try {
               process.env.ENGINE_SKIP === '1' || process.env.CRAFT_SKIP === '1',
           });
           return json(result);
-        }
-
-        if (path === '/provider' && req.method === 'GET') {
-          const settings = store.getSettings();
-          const auth = readLinerAuth();
-          return json({
-            providers: PROVIDER_OPTIONS,
-            selectedProviderId: settings.aiProviderId,
-            auth,
-          });
         }
 
         if (path === '/provider' && req.method === 'POST') {
@@ -669,22 +706,7 @@ try {
           return json(msg);
         }
 
-        if (path === '/settings' && req.method === 'GET') {
-          return json(store.getSettings());
-        }
-
-        if (path === '/settings' && req.method === 'PATCH') {
-          const body = await parseBody(req);
-          return json(store.setSettings(body as Parameters<typeof store.setSettings>[0]));
-        }
-
-        if (path === '/subagents' && req.method === 'GET') {
-          const { listSubagents } = await import('@liner/core');
-          return json(listSubagents());
-        }
-
         if (path === '/skills' && req.method === 'GET') {
-          const { listSkills } = await import('@liner/core');
           const settings = store.getSettings();
           return json(listSkills(settings.workspaceId));
         }
