@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * Quick sanity check after `bun run dev` — engine managed and RPC healthy.
+ * Quick sanity check after `bun run dev` — Cursor SDK config and RPC healthy.
  */
 const apiPort = process.env.LINER_API_PORT ?? '9240';
 const base = `http://127.0.0.1:${apiPort}/api`;
@@ -31,15 +31,18 @@ async function main(): Promise<void> {
   const state = health.engine?.state;
   const issues: string[] = [];
 
-  if (health.rpc === 'mock') {
-    issues.push('RPC mode is mock (expected opencode for managed dev)');
+  if (process.env.LINER_EXPECT_MOCK !== '1' && health.rpc === 'mock') {
+    issues.push('RPC mode is mock (set CURSOR_API_KEY for live SDK)');
   }
-  const reachable = health.engineReachable;
-  if (!reachable) {
-    issues.push('OpenCode engine not reachable');
+  if (process.env.LINER_EXPECT_MOCK !== '1' && !health.engineReachable) {
+    issues.push('Cursor SDK not ready (API key missing or invalid)');
   }
-  if (state !== 'ready') {
-    issues.push(`engine.state is "${state ?? 'unknown'}" (expected ready)`);
+  if (
+    process.env.LINER_EXPECT_MOCK !== '1' &&
+    state !== 'ready' &&
+    state !== 'dev'
+  ) {
+    issues.push(`engine.state is "${state ?? 'unknown'}" (expected ready or dev)`);
   }
 
   if (issues.length > 0) {
@@ -50,7 +53,7 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  console.log('[dev:check] OK — OpenCode reachable, engine ready');
+  console.log('[dev:check] OK — health reachable, Cursor SDK configured');
 }
 
 void main();

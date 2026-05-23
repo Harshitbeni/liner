@@ -1,6 +1,6 @@
 # Liner
 
-Personal agent outliner powered by [OpenCode](https://github.com/anomalyco/opencode) as the local coding-agent engine.
+Personal agent outliner powered by the [Cursor SDK](https://cursor.com/docs/sdk/typescript) (local Composer 2.5) as the coding-agent runtime.
 
 Nested points with uniform schema, comments-first threads (one agent session per point), and a two-phase parent harness (plan review + completion verification).
 
@@ -11,40 +11,37 @@ Nested points with uniform schema, comments-first threads (one agent session per
 | `packages/liner-core` | SQLite store, types, state machine, harness, mentions, RPC adapter |
 | `apps/liner-server` | Bun HTTP API + SSE (used by UI + Electron) |
 | `apps/liner` | React outline UI (Vite) |
-| `apps/liner-electron` | Electron shell — bundled OpenCode engine + API + UI |
+| `apps/liner-electron` | Electron shell — API + UI |
 
 ## Prerequisites
 
 - [Bun](https://bun.sh) 1.1+
 - For desktop builds: Bun on PATH (or `bun run prepare:runtime` to bundle Bun into the `.app`)
-- For bundled engine: run `bun run build:engine` before `build:desktop:bundled`
-
 ## Setup
 
 ```bash
 bun install
 ```
 
-### OpenCode (AI Engine)
+### Cursor SDK (AI runtime)
 
-The Liner API **starts OpenCode automatically** on `http://127.0.0.1:4096` when managed engine is enabled. See [docs/ENGINE.md](docs/ENGINE.md).
+Agents run locally via `@cursor/sdk` inside `~/.liner/workspaces/<id>/` with model **Composer 2.5** (fixed). See [docs/ENGINE.md](docs/ENGINE.md).
 
 ```bash
-# Dev default: mock RPC (no engine spawn)
+# Dev default: mock RPC (no API key required)
 bun run dev
 
-# Live engine: API spawns OpenCode when managed
-LINER_RPC_MODE=opencode LINER_MANAGED_ENGINE=1 bun run dev:api
-# in another terminal:
-bun run dev:ui
+# Live SDK: set Cursor API key, then:
+export CURSOR_API_KEY=cursor_...
+LINER_RPC_MODE=cursor-sdk bun run dev:api
 
-# Optional sanity check (API must be running with managed engine)
+# Optional sanity check (API must be running)
 bun run dev:check
 ```
 
-**Verify Engine** exit codes: **0** = OpenCode connected; **2** = mock-only; **1** = failure.
+**Verify SDK** exit codes: **0** = connected + reply; **2** = mock-only; **1** = failure.
 
-Force demo mode: `LINER_RPC_MODE=mock LINER_MANAGED_ENGINE=0 bun run dev`.
+Force demo mode: `LINER_RPC_MODE=mock bun run dev`.
 
 ## Run
 
@@ -73,11 +70,11 @@ bun run dev:all
 
 See [docs/DOGFOOD.md](docs/DOGFOOD.md). Summary:
 
-1. **AI Engine proof:** Any entry path → Settings → **AI Engine** → **Verify Engine** (exit 0). Dev: managed engine + `bun run dev:check` or health shows `"rpc":"opencode"`.
+1. **Cursor SDK proof:** Settings → **Cursor SDK** → **Verify SDK** (exit 0). Dev: `bun run dev:check` or health shows `"rpc":"cursor-sdk"`.
 2. **Auto workflow:** Settings → **Auto-run agents on state changes** (default on). Promote backlog → **todo** with empty plan → agent writes plan. Approve → **in-progress** → agent executes. Confirm **◉** indicator on outline row while running.
 3. **Thread UX:** Open a point → send a message → watch **streaming** text in the agent card; expand **Tools** blocks; approve/deny **permission** prompts inline.
 4. **Ship path:** Child **done** → parent harness → **shipped** on parent when children terminal.
-5. **Desktop:** `bun run build:desktop:bundled` → open `.app` from Finder — bundled OpenCode engine, no extra terminals.
+5. **Desktop:** `bun run build:desktop:bundled` → open `.app` from Finder — Cursor API key in Settings, no extra terminals.
 
 ### Dogfood UX
 
@@ -107,13 +104,12 @@ Manual overrides: **Write plan / Execute / Review** in point detail, or `POST /a
 | Command | Description |
 |---------|-------------|
 | `bun run build` | Build core, UI, electron main |
-| `bun run build:engine` | Download OpenCode CLI into `apps/liner-electron/build/opencode` |
 | `bun run prepare:runtime` | Copy Bun into `apps/liner-electron/build/runtime` for packaged API |
-| `bun run build:desktop` | Production Electron app (UI + API; placeholder engine unless built) |
-| `bun run build:desktop:bundled` | Full desktop with bundled OpenCode engine + runtime |
+| `bun run build:desktop` | Production Electron app (UI + API) |
+| `bun run build:desktop:bundled` | Full desktop with bundled Bun runtime |
 | `bun run smoke:packaged` | Probe `/api/health` + `/api/verify-engine` on running app |
 | `bun run dev:check` | Assert `/api/health` shows engine reachable + ready |
-| `bun run verify:engine` | Probe OpenCode RPC + session smoke test |
+| `bun run verify:engine` | Probe Cursor SDK + session smoke test |
 | `bun run typecheck` | Typecheck all packages |
 | `bun test` | Run liner-core tests (state machine, mentions, harness) |
 | `POST /api/verify-engine` | In-app engine verification (exit code + message) |
@@ -123,7 +119,7 @@ Manual overrides: **Write plan / Execute / Review** in point detail, or `POST /a
 
 GitHub Actions (`.github/workflows/ci.yml`) runs on every push/PR:
 
-- `bun test`, `bun run typecheck`, `bun run build` (no OpenCode required)
+- `bun test`, `bun run typecheck`, `bun run build` (no Cursor API key required)
 - Playwright smoke with `LINER_RPC_MODE=mock`
 
 Locally:
@@ -141,10 +137,9 @@ Dogfood notes: [docs/DOGFOOD.md](docs/DOGFOOD.md).
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `LINER_API_PORT` | `9240` | Liner HTTP API port |
-| `LINER_RPC_MODE` | `opencode` (managed) | `opencode`, `mock` — mock disables managed engine |
-| `LINER_MANAGED_ENGINE` | `1` | Set `0` to skip auto-starting OpenCode (CI / Playwright) |
-| `OPENCODE_PORT` | `4096` | OpenCode HTTP listen port |
-| `OPENCODE_BASE_URL` | `http://127.0.0.1:4096` | OpenCode HTTP API |
+| `LINER_RPC_MODE` | `cursor-sdk` (packaged) / `mock` (dev) | `cursor-sdk`, `mock` |
+| `CURSOR_API_KEY` | — | Cursor API key (or use `~/.liner/auth.json`) |
+| `LINER_ALLOW_MOCK_FALLBACK` | off | `1` = demo RPC when SDK connect fails |
 | `VITE_LINER_API` | `http://127.0.0.1:9240/api` | UI API base URL |
 | `LINER_UI_URL` | `http://127.0.0.1:5180` | Electron dev UI URL |
 | `LINER_WORKSPACE_ID` | `default` | SQLite workspace under `~/.liner/workspaces/` |
@@ -161,7 +156,7 @@ Artifacts under `apps/liner-electron/release/`:
 - **macOS:** `Liner.app`, `Liner-x.x.x.dmg`
 - **Linux / Windows:** `dir` or installer targets per platform
 
-The packaged app loads UI from `resources/liner-ui`, starts the **bundled OpenCode engine** from `resources/opencode-engine`, and runs the Liner API with `resources/runtime/bun` (or system Bun). See [docs/ENGINE.md](docs/ENGINE.md).
+The packaged app loads UI from `resources/liner-ui` and runs the Liner API with `resources/runtime/bun` (or system Bun). Configure your Cursor API key in Settings. See [docs/ENGINE.md](docs/ENGINE.md).
 
 ```bash
 bun run build:desktop:bundled
@@ -169,7 +164,7 @@ open apps/liner-electron/release/mac-arm64/Liner.app
 bun run smoke:packaged
 ```
 
-**Provider keys:** Configure LLM credentials in **Settings → AI Provider** (`~/.liner/auth.json`). **Verify Engine** confirms RPC; exit **2** usually means engine down or credentials missing.
+**Cursor API key:** Configure in **Settings → Cursor SDK** (`~/.liner/auth.json`). **Verify SDK** confirms the runtime; exit **2** usually means mock-only or missing key.
 
 **macOS without bundled Bun:** Run `bun run prepare:runtime` before packaging, or install Bun globally if the API fails to start.
 

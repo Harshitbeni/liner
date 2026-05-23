@@ -1,45 +1,34 @@
-# Bundled AI Engine (OpenCode)
+# Cursor SDK local runtime
 
-Liner ships a pinned [OpenCode](https://github.com/anomalyco/opencode) CLI as the **AI Engine**. Liner remains the product layer (outline, workflow, harness); OpenCode is the local agent runtime.
+Liner uses the [Cursor SDK](https://cursor.com/docs/sdk/typescript) (`@cursor/sdk`) as its **AI runtime**. Liner remains the product layer (outline, workflow, harness); Composer 2.5 runs locally inside each workspace sandbox.
 
-**One owner:** the **Liner API** (`liner-server`) starts and stops the engine child process. Electron is a launcher (window + API + optional Vite dev). Browser dev uses the same API path.
+**One owner:** the **Liner API** (`liner-server`) connects to Cursor via `CursorSdkSessionRpcAdapter`. Electron is a launcher (window + API + optional Vite dev). Browser dev uses the same API path.
 
-## Resource layout
+## Workspace sandboxes
 
-| Path (dev) | Path (packaged `.app`) | Purpose |
-|------------|------------------------|---------|
-| `apps/liner-electron/build/opencode/` | `Contents/Resources/opencode-engine/` | OpenCode CLI + manifest |
-| `apps/liner-electron/build/runtime/bun` | `Contents/Resources/runtime/bun` | Bun for Liner API (optional bundle) |
-| `apps/liner/dist` | `Contents/Resources/liner-ui/` | Built React UI |
-| `apps/liner-server/src` | `Contents/Resources/liner-server/` | Liner HTTP API entry |
-
-### OpenCode engine directory (`opencode-engine/`)
-
-Produced by `bun run build:engine` into `apps/liner-electron/build/opencode/`:
+Each Liner workspace maps to a directory:
 
 ```
-opencode/
-  manifest.json
-  bin/opencode          # CLI binary (serve subcommand)
+~/.liner/workspaces/<workspaceId>/
+  liner.db          # outline + thread_messages
+  .liner/skills/    # optional per-workspace skills
 ```
 
-## Startup
+Agents always run with `local.cwd` set to that path. There is no model switcher — the model is fixed to `composer-2.5`.
 
-1. API boots (`apps/liner-server/src/index.ts`).
-2. If `LINER_MANAGED_ENGINE` is not `0` and `LINER_RPC_MODE` is not `mock`, call `startManagedEngine()`.
-3. If OpenCode is already listening on the configured port, skip spawn.
-4. Else spawn bundled `bin/opencode serve` (packaged) or system `opencode` / SDK bootstrap (dev).
-5. Connect HTTP RPC via `@opencode-ai/sdk` in `opencode` mode.
+## Credentials
 
-**Electron** sets `LINER_RPC_MODE=opencode`, `OPENCODE_PORT`, `LINER_ENGINE_ROOT`. It does not spawn OpenCode directly.
+Store your Cursor API key in **`~/.liner/auth.json`**:
 
-## Provider credentials
+```json
+{
+  "cursor": { "type": "api", "key": "cursor_..." }
+}
+```
 
-Keys live in **`~/.liner/auth.json`** (OpenCode-compatible). Configure in **Settings → AI Provider**.
+Configure in **Settings → Cursor SDK**. Keys can also be read from `CURSOR_API_KEY` when the SDK loads.
 
-Supported providers include Anthropic, OpenAI, OpenRouter, Google AI, and Ollama (local, no key).
-
-**Verify Engine** (`POST /api/verify-engine`): exit **0** = RPC OK + reply; **2** = mock-only; **1** = failure (often missing API key).
+**Verify SDK** (`POST /api/verify-engine`): exit **0** = SDK connected + reply; **2** = mock-only; **1** = failure (often missing API key).
 
 ## Skills
 
@@ -52,27 +41,26 @@ Anthropic-style `SKILL.md` directories:
 
 | Variable | Default | Role |
 |----------|---------|------|
-| `LINER_MANAGED_ENGINE` | on | `0` = do not spawn engine (CI, Playwright) |
-| `LINER_RPC_MODE` | `opencode` | `mock` = demo RPC, no spawn |
-| `OPENCODE_PORT` | `4096` | Engine listen port |
-| `OPENCODE_BASE_URL` | `http://127.0.0.1:4096` | HTTP API base |
-| `LINER_ALLOW_MOCK_FALLBACK` | off | `1` = allow demo fallback when OpenCode fails |
+| `LINER_RPC_MODE` | `cursor-sdk` | `mock` = demo RPC without API key |
+| `LINER_ALLOW_MOCK_FALLBACK` | off | `1` = allow demo fallback when SDK connect fails |
+| `CURSOR_API_KEY` | — | Optional; overrides file when set in environment |
 | `ENGINE_SKIP` | — | `1` = skip verify script |
+| `CURSOR_SDK_E2E` | — | `1` = run live SDK contract test |
 
-## Build commands
+## Development
 
 ```bash
-bun run build:engine          # download opencode CLI into build/opencode/
-bun run prepare:runtime       # optional Bun for packaged API
-bun run build:desktop:bundled # ship .app with engine
+# Demo mode (no API key)
+bun run dev:api   # LINER_RPC_MODE=mock
+
+# Live SDK (set key first)
+export CURSOR_API_KEY=cursor_...
+LINER_RPC_MODE=cursor-sdk bun run dev:api
 ```
 
-## Verification
+## Smoke / verify
 
 ```bash
-bun run dev
-bun run dev:check
 bun run verify:engine
-bun run build:desktop:bundled
-bun run smoke:packaged
+cd packages/liner-core && CURSOR_SDK_E2E=1 bun test src/__tests__/cursor-sdk-adapter-contract.test.ts
 ```

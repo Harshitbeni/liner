@@ -1,42 +1,52 @@
 import type { LinerSettings } from '../types';
-import { isManagedEngineEnabled } from '../engine/supervisor';
+import { OutlineStore } from '../store';
+import type { OutlineStore as OutlineStoreType } from '../store';
 import { isMockFallbackAllowed, isPackagedMode } from '../engine-info';
-import { isOpencodeServerReachable } from './opencode-detect';
-import { OpenCodeSessionRpcAdapter } from './opencode-adapter';
+import { hasCursorApiKey } from '../provider-auth';
+import { CursorSdkSessionRpcAdapter } from './cursor-sdk-adapter';
 import { MockSessionRpcAdapter } from './mock-adapter';
-import type { OpenCodeRpcConfig, RpcMode, SessionRpcAdapter } from './types';
+import type { RpcMode, SessionRpcAdapter } from './types';
 
 export * from './types';
 export { MockSessionRpcAdapter } from './mock-adapter';
-export { OpenCodeSessionRpcAdapter } from './opencode-adapter';
-export { isOpencodeServerReachable } from './opencode-detect';
+export {
+  CursorSdkSessionRpcAdapter,
+  CURSOR_DEFAULT_MODEL,
+} from './cursor-sdk-adapter';
+export { CURSOR_DEFAULT_MODEL as CURSOR_MODEL_ID } from './cursor-config';
+export { defaultCursorSdkFacade, type CursorSdkFacade } from './cursor-sdk-facade';
 
 export async function resolveRpcMode(
-  settings: LinerSettings,
+  _settings: LinerSettings,
   preferred?: RpcMode,
 ): Promise<RpcMode> {
-  if (preferred === 'mock') return 'mock';
-  if (preferred === 'opencode') return 'opencode';
+  if (preferred === 'mock' && !hasCursorApiKey()) return 'mock';
+  if (preferred === 'cursor-sdk' || (preferred === 'mock' && hasCursorApiKey())) {
+    return 'cursor-sdk';
+  }
   const env = process.env.LINER_RPC_MODE as RpcMode | 'auto' | undefined;
-  if (env === 'mock') return 'mock';
-  if (env === 'opencode') return 'opencode';
-  if (isPackagedMode()) return 'opencode';
-  if (isManagedEngineEnabled()) return 'opencode';
-  const reachable = await isOpencodeServerReachable(settings.opencodeBaseUrl);
-  return reachable ? 'opencode' : 'mock';
+  if (env === 'mock' && !hasCursorApiKey()) return 'mock';
+  if (env === 'cursor-sdk') return 'cursor-sdk';
+  if (isPackagedMode()) return 'cursor-sdk';
+  if (!hasCursorApiKey() && isMockFallbackAllowed()) return 'mock';
+  if (!hasCursorApiKey() && process.env.LINER_RPC_MODE !== 'cursor-sdk') {
+    return 'mock';
+  }
+  return 'cursor-sdk';
 }
 
 export function createRpcAdapter(
   settings: LinerSettings,
-  mode: RpcMode = 'opencode',
+  mode: RpcMode = 'cursor-sdk',
+  store?: OutlineStoreType,
 ): SessionRpcAdapter {
   if (mode === 'mock') {
     return new MockSessionRpcAdapter();
   }
-  const config: OpenCodeRpcConfig = {
-    baseUrl: settings.opencodeBaseUrl,
-  };
-  return new OpenCodeSessionRpcAdapter(config, {
+  const outlineStore = store ?? new OutlineStore(settings.workspaceId);
+  return new CursorSdkSessionRpcAdapter({
+    store: outlineStore,
+    workspaceId: settings.workspaceId,
     allowMockFallback: isMockFallbackAllowed(),
   });
 }
@@ -44,9 +54,10 @@ export function createRpcAdapter(
 export async function createConnectedRpcAdapter(
   settings: LinerSettings,
   preferred?: RpcMode,
+  store?: OutlineStoreType,
 ): Promise<SessionRpcAdapter> {
   const mode = await resolveRpcMode(settings, preferred);
-  const adapter = createRpcAdapter(settings, mode);
+  const adapter = createRpcAdapter(settings, mode, store);
   await adapter.connect();
   return adapter;
 }

@@ -110,10 +110,6 @@ export type LinerSettings = {
   theme: 'system' | 'light' | 'dark';
   strictPlanGate: boolean;
   autoAgents: boolean;
-  /** OpenCode HTTP API base URL */
-  opencodeBaseUrl: string;
-  /** Preferred LLM provider id (anthropic, openai, openrouter, …) */
-  aiProviderId: string;
 };
 
 export type SubagentId =

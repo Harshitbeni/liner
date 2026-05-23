@@ -29,7 +29,7 @@ type FetchStatus = 'idle' | 'loading' | 'ready' | 'error';
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'general', label: 'General' },
-  { id: 'provider', label: 'AI Provider' },
+  { id: 'provider', label: 'Cursor SDK' },
   { id: 'agents', label: 'Agents' },
   { id: 'appearance', label: 'Appearance' },
   { id: 'shortcuts', label: 'Shortcuts' },
@@ -178,16 +178,6 @@ export function SettingsModal({
 
               {tab === 'general' && fetchStatus === 'ready' && settings ? (
                 <>
-                  <div className="space-y-2">
-                    <Label htmlFor="opencode-url">OpenCode API URL</Label>
-                    <Input
-                      id="opencode-url"
-                      value={settings.opencodeBaseUrl}
-                      onChange={(e) =>
-                        patch({ opencodeBaseUrl: e.target.value })
-                      }
-                    />
-                  </div>
                   <label className="flex cursor-pointer items-center gap-2 text-sm">
                     <input
                       type="checkbox"

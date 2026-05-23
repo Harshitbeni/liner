@@ -6,7 +6,7 @@ const ports = [
   Number(process.env.LINER_UI_PORT ?? 5180),
 ];
 
-for (const pattern of ['opencode serve', 'bun --watch src/index.ts']) {
+for (const pattern of ['bun --watch src/index.ts', 'liner-server']) {
   const result = Bun.spawnSync(['pgrep', '-f', pattern]);
   const pids = new TextDecoder()
     .decode(result.stdout)

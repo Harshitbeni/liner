@@ -18,11 +18,6 @@
       "filter": ["**/*"]
     },
     {
-      "from": "build/opencode",
-      "to": "opencode-engine",
-      "filter": ["**/*"]
-    },
-    {
       "from": "build/runtime",
       "to": "runtime",
       "filter": ["**/*"]

@@ -4,13 +4,6 @@ import { api } from '../api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 
 type Props = {
   health: HealthResponse | null;
@@ -20,11 +13,8 @@ type Props = {
 function engineLabel(health: HealthResponse | null): string {
   const eng = health?.engine;
   if (!eng) return '—';
-  if (eng.source === 'bundled' && eng.version) {
-    return `Bundled OpenCode ${eng.version}`;
-  }
-  if (eng.version) return `OpenCode ${eng.version}`;
-  return eng.source === 'bundled' ? 'Bundled engine' : 'Development';
+  if (eng.name === 'cursor-sdk') return 'Cursor SDK (local)';
+  return eng.name;
 }
 
 function engineStateLabel(state: string | undefined): string {
@@ -40,17 +30,19 @@ function engineStateLabel(state: string | undefined): string {
     case 'dev':
       return 'Development';
     case 'unavailable':
-      return 'Not installed';
+      return 'Not configured';
     default:
       return state ?? '—';
   }
 }
 
 export function ProviderSetupPanel({ health, onHealthRefresh }: Props) {
-  const [providers, setProviders] = React.useState<
-    Array<{ id: string; label: string; hint: string }>
-  >([]);
-  const [selectedId, setSelectedId] = React.useState('anthropic');
+  const [config, setConfig] = React.useState<{
+    model: string;
+    modelLabel: string;
+    workspaceSandbox: string;
+    hasApiKey: boolean;
+  } | null>(null);
   const [apiKey, setApiKey] = React.useState('');
   const [saveBusy, setSaveBusy] = React.useState(false);
   const [verifyBusy, setVerifyBusy] = React.useState(false);
@@ -63,22 +55,29 @@ export function ProviderSetupPanel({ health, onHealthRefresh }: Props) {
 
   React.useEffect(() => {
     api.getProviderConfig().then((cfg) => {
-      setProviders(cfg.providers);
-      setSelectedId(cfg.selectedProviderId || 'anthropic');
+      setConfig({
+        model: cfg.model,
+        modelLabel: cfg.modelLabel,
+        workspaceSandbox: cfg.workspaceSandbox,
+        hasApiKey: cfg.hasApiKey,
+      });
     });
   }, []);
 
-  const saveProvider = async () => {
+  const saveKey = async () => {
     setSaveBusy(true);
     setSaved(false);
     try {
-      await api.saveProviderConfig({
-        providerId: selectedId,
-        apiKey,
-        selectedProviderId: selectedId,
-      });
+      await api.saveProviderConfig({ apiKey });
       setApiKey('');
       setSaved(true);
+      const cfg = await api.getProviderConfig();
+      setConfig({
+        model: cfg.model,
+        modelLabel: cfg.modelLabel,
+        workspaceSandbox: cfg.workspaceSandbox,
+        hasApiKey: cfg.hasApiKey,
+      });
       onHealthRefresh?.();
     } finally {
       setSaveBusy(false);
@@ -93,30 +92,39 @@ export function ProviderSetupPanel({ health, onHealthRefresh }: Props) {
       setVerifyResult(result);
       onHealthRefresh?.();
     } catch (e) {
+      const message =
+        e instanceof Error
+          ? e.name === 'TimeoutError'
+            ? 'Request timed out — is the API running on port 9240?'
+            : e.message === 'Failed to fetch'
+              ? 'Cannot reach API — run `bun run dev` (or restart the desktop app).'
+              : e.message
+          : String(e);
       setVerifyResult({
         exitCode: 1,
         ok: false,
-        message: String(e),
+        message,
       });
     } finally {
       setVerifyBusy(false);
     }
   };
 
-  const reachable =
-    health?.engineReachable ?? false;
+  const reachable = health?.engineReachable ?? config?.hasApiKey ?? false;
 
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">
-        Liner runs a local <strong>OpenCode</strong> engine for agent sessions.
-        Bring your own API key — stored in{' '}
-        <code className="text-xs">~/.liner/auth.json</code> (OpenCode-compatible).
+        Liner runs agents through the local <strong>Cursor SDK</strong> with a
+        fixed model (<strong>Composer 2.5</strong>). Your API key is stored in{' '}
+        <code className="text-xs">~/.liner/auth.json</code>. Each workspace uses
+        its own sandbox directory under{' '}
+        <code className="text-xs">~/.liner/workspaces/</code>.
       </p>
 
       <div className="grid grid-cols-2 gap-3 text-sm">
         <div>
-          <span className="text-muted-foreground">Engine</span>
+          <span className="text-muted-foreground">Runtime</span>
           <p className="font-medium">{engineLabel(health)}</p>
         </div>
         <div>
@@ -124,11 +132,27 @@ export function ProviderSetupPanel({ health, onHealthRefresh }: Props) {
           <p className="font-medium">{engineStateLabel(health?.engine?.state)}</p>
         </div>
         <div>
+          <span className="text-muted-foreground">Model</span>
+          <p className="font-medium">{config?.modelLabel ?? 'Composer 2.5'}</p>
+        </div>
+        <div>
           <span className="text-muted-foreground">RPC mode</span>
           <p className="font-medium">{health?.rpc ?? '—'}</p>
         </div>
+        <div className="col-span-2">
+          <span className="text-muted-foreground">Workspace sandbox</span>
+          <p className="font-mono text-xs break-all">
+            {config?.workspaceSandbox ?? '—'}
+          </p>
+        </div>
         <div>
-          <span className="text-muted-foreground">Engine reachable</span>
+          <span className="text-muted-foreground">API key</span>
+          <p className="font-medium">
+            {config?.hasApiKey ? 'configured' : 'not set'}
+          </p>
+        </div>
+        <div>
+          <span className="text-muted-foreground">SDK ready</span>
           <p className="font-medium">{reachable ? 'yes' : 'no'}</p>
         </div>
       </div>
@@ -140,35 +164,19 @@ export function ProviderSetupPanel({ health, onHealthRefresh }: Props) {
       ) : null}
 
       <div className="space-y-2">
-        <Label>Provider</Label>
-        <Select value={selectedId} onValueChange={setSelectedId}>
-          <SelectTrigger>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {providers.map((p) => (
-              <SelectItem key={p.id} value={p.id}>
-                {p.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <p className="text-xs text-muted-foreground">
-          {providers.find((p) => p.id === selectedId)?.hint ??
-            'API key for the selected provider'}
-        </p>
-      </div>
-
-      <div className="space-y-2">
-        <Label htmlFor="provider-key">API key</Label>
+        <Label htmlFor="cursor-api-key">Cursor API key</Label>
         <Input
-          id="provider-key"
+          id="cursor-api-key"
           type="password"
           autoComplete="off"
           placeholder="Paste key (leave blank to keep existing)"
           value={apiKey}
           onChange={(e) => setApiKey(e.target.value)}
         />
+        <p className="text-xs text-muted-foreground">
+          Create a key at Cursor Dashboard → Integrations. Model is always{' '}
+          {config?.model ?? 'composer-2.5'} — no model switcher.
+        </p>
       </div>
 
       <div className="flex flex-wrap gap-2">
@@ -176,12 +184,12 @@ export function ProviderSetupPanel({ health, onHealthRefresh }: Props) {
           type="button"
           variant="secondary"
           disabled={saveBusy}
-          onClick={saveProvider}
+          onClick={saveKey}
         >
-          {saveBusy ? 'Saving…' : 'Save provider'}
+          {saveBusy ? 'Saving…' : 'Save API key'}
         </Button>
         <Button type="button" disabled={verifyBusy} onClick={runVerify}>
-          {verifyBusy ? 'Verifying…' : 'Verify Engine'}
+          {verifyBusy ? 'Verifying…' : 'Verify SDK'}
         </Button>
         <Button type="button" variant="ghost" onClick={() => onHealthRefresh?.()}>
           Refresh health
@@ -190,7 +198,7 @@ export function ProviderSetupPanel({ health, onHealthRefresh }: Props) {
 
       {saved ? (
         <p className="text-sm text-muted-foreground" role="status">
-          Provider settings saved.
+          Cursor API key saved.
         </p>
       ) : null}
 
@@ -208,8 +216,8 @@ export function ProviderSetupPanel({ health, onHealthRefresh }: Props) {
       ) : null}
 
       <p className="text-xs text-muted-foreground">
-        Default: Anthropic Claude. OpenRouter works without a direct Anthropic account.
-        Ollama runs locally with no key. See <code>docs/ENGINE.md</code>.
+        See <code>docs/ENGINE.md</code> for environment variables and smoke
+        checks.
       </p>
     </div>
   );

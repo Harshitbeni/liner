@@ -1,55 +1,32 @@
 import { describe, expect, test } from 'bun:test';
-import { join } from 'node:path';
-import { resolveOpencodeEngineRoot } from '../engine/paths';
-import { isManagedEngineEnabled } from '../engine/supervisor';
+import {
+  isManagedEngineEnabled,
+  startManagedEngine,
+  applyEngineEnv,
+} from '../engine/supervisor';
 
-describe('isManagedEngineEnabled', () => {
-  test('enabled by default', () => {
-    const prevManaged = process.env.LINER_MANAGED_ENGINE;
-    const prevRpc = process.env.LINER_RPC_MODE;
-    delete process.env.LINER_MANAGED_ENGINE;
-    delete process.env.LINER_RPC_MODE;
-    expect(isManagedEngineEnabled()).toBe(true);
-    if (prevManaged !== undefined) process.env.LINER_MANAGED_ENGINE = prevManaged;
-    if (prevRpc !== undefined) process.env.LINER_RPC_MODE = prevRpc;
-  });
-
-  test('disabled when LINER_MANAGED_ENGINE=0', () => {
-    const prev = process.env.LINER_MANAGED_ENGINE;
-    process.env.LINER_MANAGED_ENGINE = '0';
+describe('Cursor SDK engine supervisor', () => {
+  test('managed engine is disabled (no separate process)', () => {
     expect(isManagedEngineEnabled()).toBe(false);
-    if (prev !== undefined) process.env.LINER_MANAGED_ENGINE = prev;
-    else delete process.env.LINER_MANAGED_ENGINE;
   });
 
-  test('disabled when LINER_RPC_MODE=mock', () => {
-    const prev = process.env.LINER_RPC_MODE;
-    process.env.LINER_RPC_MODE = 'mock';
-    expect(isManagedEngineEnabled()).toBe(false);
-    if (prev !== undefined) process.env.LINER_RPC_MODE = prev;
-    else delete process.env.LINER_RPC_MODE;
+  test('startManagedEngine returns dev cursor-sdk state', async () => {
+    const result = await startManagedEngine();
+    expect(result.state).toBe('dev');
+    expect(result.reason).toBe('cursor-sdk');
   });
-});
 
-describe('resolveOpencodeEngineRoot', () => {
-  test('dev uses build/opencode under repo', () => {
-    const repo = join(import.meta.dir, '..', '..', '..', '..');
-    const { root, source } = resolveOpencodeEngineRoot({
-      isPackaged: false,
-      repoRoot: repo,
+  test('applyEngineEnv sets cursor-sdk engine name', () => {
+    const prev = process.env.LINER_ENGINE_NAME;
+    applyEngineEnv({
+      state: 'dev',
+      error: null,
+      version: null,
+      source: 'dev',
+      started: false,
     });
-    expect(source).toBe('dev');
-    expect(root).toEndWith('apps/liner-electron/build/opencode');
-  });
-
-  test('packaged uses opencode-engine under resources', () => {
-    const { root, source } = resolveOpencodeEngineRoot({
-      isPackaged: true,
-      resourcesPath: '/tmp/Liner.app/Contents/Resources',
-    });
-    expect(source).toBe('bundled');
-    expect(root).toBe(
-      '/tmp/Liner.app/Contents/Resources/opencode-engine',
-    );
+    expect(process.env.LINER_ENGINE_NAME).toBe('cursor-sdk');
+    if (prev !== undefined) process.env.LINER_ENGINE_NAME = prev;
+    else delete process.env.LINER_ENGINE_NAME;
   });
 });

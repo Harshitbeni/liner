@@ -73,7 +73,7 @@ export class MockSessionRpcAdapter implements SessionRpcAdapter {
         sessionId,
         role: 'assistant',
         content:
-          '_Mock agent reply._ Start OpenCode or set LINER_RPC_MODE=opencode for real sessions.',
+          '_Mock agent reply._ Configure Cursor API key or set LINER_RPC_MODE=cursor-sdk for live sessions.',
         createdAt: new Date().toISOString(),
         meta: { collapsedTools: true },
       };

@@ -1,6 +1,8 @@
+import { workspaceDir } from './paths';
 import { createConnectedRpcAdapter } from './rpc/index';
+import { CursorSdkSessionRpcAdapter } from './rpc/cursor-sdk-adapter';
 import { buildSessionContext } from './session-context';
-import { hasProviderKey } from './provider-auth';
+import { hasCursorApiKey } from './provider-auth';
 import { isPackagedMode } from './engine-info';
 import { OutlineStore } from './store';
 
@@ -13,12 +15,11 @@ export type VerifyEngineResult = {
 };
 
 /**
- * Run engine smoke logic (session + message). Mirrors scripts/engine-smoke.ts exit codes.
- * 0 = OpenCode connected; 2 = mock-only; 1 = failure.
+ * Verify Cursor SDK connectivity (session + assistant reply).
+ * Exit codes: 0 = SDK connected; 2 = mock-only; 1 = failure.
  */
 export async function verifyEngineConnection(options?: {
-  opencodeBaseUrl?: string;
-  forceOpencode?: boolean;
+  forceCursorSdk?: boolean;
   skip?: boolean;
 }): Promise<VerifyEngineResult> {
   if (options?.skip || process.env.ENGINE_SKIP === '1') {
@@ -30,53 +31,61 @@ export async function verifyEngineConnection(options?: {
     };
   }
 
-  const baseUrl =
-    options?.opencodeBaseUrl ??
-    process.env.OPENCODE_BASE_URL ??
-    'http://127.0.0.1:4096';
-  const forceOpencode =
-    options?.forceOpencode ??
-    process.env.LINER_RPC_MODE === 'opencode';
+  const forceCursorSdk =
+    options?.forceCursorSdk ??
+    (hasCursorApiKey() || process.env.LINER_RPC_MODE === 'cursor-sdk');
 
   const store = new OutlineStore('verify-engine');
   const settings = store.getSettings();
-  settings.opencodeBaseUrl = baseUrl;
+
+  if (!hasCursorApiKey() && forceCursorSdk) {
+    return {
+      exitCode: 1,
+      ok: false,
+      message:
+        'No Cursor API key configured. Add one in Settings → Cursor SDK.',
+    };
+  }
 
   let rpc;
   try {
     rpc = await createConnectedRpcAdapter(
       settings,
-      forceOpencode ? 'opencode' : undefined,
+      forceCursorSdk ? 'cursor-sdk' : undefined,
+      store,
     );
   } catch (e) {
+    const detail = e instanceof Error ? e.message : String(e);
+    const hint = detail.includes('401') || /auth/i.test(detail)
+      ? ' Check the key at https://cursor.com/dashboard/integrations'
+      : '';
     return {
       exitCode: 1,
       ok: false,
-      message: `Failed to connect RPC: ${e}`,
+      message: `Cursor SDK connection failed: ${detail}.${hint}`,
     };
   }
 
   const usedMock = rpc.mode === 'mock';
 
-  if (forceOpencode && usedMock) {
+  if (forceCursorSdk && usedMock) {
     await rpc.disconnect();
     return {
       exitCode: 2,
       ok: false,
       message: isPackagedMode()
-        ? 'AI engine unreachable. Reinstall with build:desktop:bundled or check Settings → AI Provider.'
-        : 'LINER_RPC_MODE=opencode but OpenCode is unreachable. Install opencode CLI or start the managed engine.',
+        ? 'Cursor SDK unavailable — check API key in Settings → Cursor SDK.'
+        : 'LINER_RPC_MODE=cursor-sdk but SDK is unavailable. Set CURSOR_API_KEY or ~/.liner/auth.json.',
       rpcMode: rpc.mode,
     };
   }
 
-  const providerId = settings.aiProviderId || 'anthropic';
-  if (!usedMock && !hasProviderKey(providerId) && providerId !== 'ollama') {
+  if (!usedMock && !hasCursorApiKey()) {
     await rpc.disconnect();
     return {
       exitCode: 1,
       ok: false,
-      message: `No API key for provider "${providerId}". Add one in Settings → AI Provider.`,
+      message: 'No Cursor API key. Add one in Settings → Cursor SDK.',
       rpcMode: rpc.mode,
     };
   }
@@ -96,36 +105,69 @@ export async function verifyEngineConnection(options?: {
 
     await rpc.sendMessage(sessionId, 'Reply with exactly: LINER_SMOKE_OK');
 
-    let gotReply = false;
-    const unsub = rpc.subscribe(sessionId, (msg) => {
-      if (msg.role === 'assistant' && !msg.meta?.streaming) {
-        gotReply = true;
+    if (rpc instanceof CursorSdkSessionRpcAdapter) {
+      try {
+        await rpc.waitForSessionIdle(sessionId, 60_000);
+      } catch (e) {
+        await rpc.disconnect().catch(() => {});
+        return {
+          exitCode: 1,
+          ok: false,
+          message: e instanceof Error ? e.message : String(e),
+          rpcMode: rpc.mode,
+        };
       }
-    });
-
-    await new Promise((r) => setTimeout(r, usedMock ? 2_000 : 12_000));
-    unsub();
+    } else {
+      await new Promise((r) => setTimeout(r, 2_000));
+    }
 
     const messages = await rpc.getMessages(sessionId);
+    const agentError = messages.find(
+      (m) =>
+        m.role === 'assistant' &&
+        m.content.includes('_Agent error:'),
+    );
     await rpc.disconnect();
+
+    if (agentError) {
+      const detail = agentError.content
+        .replace(/^_Agent error:\s*/i, '')
+        .replace(/_$/g, '')
+        .trim();
+      return {
+        exitCode: 1,
+        ok: false,
+        message: detail || 'Cursor agent run failed',
+        rpcMode: rpc.mode,
+      };
+    }
+
+    const gotReply = messages.some(
+      (m) => m.role === 'assistant' && !m.meta?.streaming && m.content.trim(),
+    );
 
     if (usedMock) {
       return {
         exitCode: 2,
         ok: false,
         message: isPackagedMode()
-          ? 'Engine not reachable — demo RPC only. Configure provider keys in Settings → AI Provider.'
-          : 'OpenCode not running — verification used mock RPC. Start Liner dev server or install opencode.',
+          ? 'Cursor SDK not configured — demo RPC only. Add API key in Settings → Cursor SDK.'
+          : 'Using mock RPC — set CURSOR_API_KEY or add key in Settings for live Composer 2.5.',
         rpcMode: 'mock',
       };
     }
 
-    if (!gotReply && messages.length < 2) {
+    if (!gotReply) {
+      const lastErr =
+        rpc instanceof CursorSdkSessionRpcAdapter
+          ? rpc.getLastError()
+          : null;
       return {
         exitCode: 1,
         ok: false,
         message:
-          'No assistant reply — engine connected but check provider API keys in Settings → AI Provider.',
+          lastErr ??
+          'No assistant reply — ensure Cursor desktop/CLI can run local agents and the API key is valid.',
         rpcMode: rpc.mode,
       };
     }
@@ -133,7 +175,7 @@ export async function verifyEngineConnection(options?: {
     return {
       exitCode: 0,
       ok: true,
-      message: 'OpenCode connected — session created and assistant replied.',
+      message: `Cursor SDK connected (Composer 2.5, sandbox ${workspaceDir(settings.workspaceId)}).`,
       rpcMode: rpc.mode,
     };
   } catch (e) {

@@ -1,5 +1,5 @@
 /**
- * Verify OpenCode engine integration. Skips when ENGINE_SKIP=1.
+ * Verify Cursor SDK integration. Skips when ENGINE_SKIP=1.
  *
  *   bun run verify:engine
  */

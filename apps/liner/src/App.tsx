@@ -466,7 +466,7 @@ export default function App() {
                   ? 'Demo mode — Settings → AI Engine'
                   : 'AI engine not ready'
               : health!.rpc === 'mock'
-                ? 'Mock RPC — demo mode (set LINER_RPC_MODE=opencode for live agents)'
+                ? 'Mock RPC — demo mode (add Cursor API key for live Composer 2.5 agents)'
                 : health!.engine?.state === 'failed' ||
                     health!.engine?.state === 'unavailable'
                   ? 'AI engine failed — Settings → AI Engine'

@@ -78,8 +78,10 @@ export type VerifyEngineResponse = {
 };
 
 export type ProviderConfigResponse = {
-  providers: Array<{ id: string; label: string; hint: string }>;
-  selectedProviderId: string;
+  model: string;
+  modelLabel: string;
+  workspaceSandbox: string;
+  hasApiKey: boolean;
   auth: Record<string, unknown>;
 };
 
@@ -143,13 +145,12 @@ export function subscribePointEvents(
 export const api = {
   health: () => request<HealthResponse>('/health'),
   verifyEngine: () =>
-    request<VerifyEngineResponse>('/verify-engine', { method: 'POST' }),
+    request<VerifyEngineResponse>('/verify-engine', {
+      method: 'POST',
+      timeoutMs: 90_000,
+    }),
   getProviderConfig: () => request<ProviderConfigResponse>('/provider'),
-  saveProviderConfig: (body: {
-    providerId: string;
-    apiKey?: string;
-    selectedProviderId?: string;
-  }) =>
+  saveProviderConfig: (body: { apiKey?: string }) =>
     request<{ ok: boolean; auth: Record<string, unknown> }>('/provider', {
       method: 'POST',
       body: JSON.stringify(body),

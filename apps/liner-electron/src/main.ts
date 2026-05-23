@@ -3,11 +3,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { join } from 'node:path';
 import { existsSync } from 'node:fs';
 import { createConnection } from 'node:net';
-import {
-  resolveBunExecutable,
-  resolveEngineRoot,
-  resolveRepoRoot,
-} from './engine-paths';
+import { resolveBunExecutable, resolveRepoRoot } from './engine-paths';
 
 const isPackaged = app.isPackaged;
 /** Bundled main/preload live in dist/ inside app.asar when packaged. */
@@ -29,7 +25,6 @@ let bunPath: string | null = null;
 let bunSource: 'bundled' | 'system' | 'none' = 'none';
 let resolvedApiPort = Number(process.env.LINER_API_PORT ?? 9240);
 
-const OPENCODE_PORT = process.env.OPENCODE_PORT ?? '4096';
 const LINER_API_PORT = process.env.LINER_API_PORT ?? '9240';
 const UI_DEV_PORT = process.env.LINER_UI_PORT ?? '5180';
 const PACKAGED_UI_PORT = process.env.LINER_UI_STATIC_PORT ?? '5181';
@@ -90,21 +85,11 @@ async function resolveApiPortForSpawn(): Promise<number> {
 }
 
 function apiEnv(): NodeJS.ProcessEnv {
-  const { root: engineRoot } = resolveEngineRoot({
-    isPackaged,
-    resourcesPath: process.resourcesPath,
-    repoRoot: REPO_ROOT,
-  });
-
   return {
     ...process.env,
     LINER_PACKAGED: isPackaged ? '1' : '0',
-    LINER_MANAGED_ENGINE: '1',
-    LINER_RPC_MODE: process.env.LINER_RPC_MODE ?? 'opencode',
-    OPENCODE_PORT,
-    OPENCODE_BASE_URL:
-      process.env.OPENCODE_BASE_URL ?? `http://127.0.0.1:${OPENCODE_PORT}`,
-    LINER_ENGINE_ROOT: engineRoot,
+    LINER_MANAGED_ENGINE: '0',
+    LINER_RPC_MODE: process.env.LINER_RPC_MODE ?? 'cursor-sdk',
     LINER_REPO_ROOT: REPO_ROOT,
     LINER_RESOURCES_PATH: process.resourcesPath,
     LINER_BUN_PATH: bunPath ?? '',

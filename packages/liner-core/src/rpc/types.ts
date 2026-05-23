@@ -1,6 +1,6 @@
 import type { ThreadMessage } from '../types';
 
-export type RpcMode = 'opencode' | 'mock';
+export type RpcMode = 'cursor-sdk' | 'mock';
 
 export type EnsureSessionOptions = {
   title?: string;
@@ -33,6 +33,3 @@ export interface SessionRpcAdapter {
   ): Promise<void>;
 }
 
-export type OpenCodeRpcConfig = {
-  baseUrl: string;
-};

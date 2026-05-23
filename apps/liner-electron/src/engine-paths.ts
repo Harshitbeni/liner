@@ -7,19 +7,6 @@ export function resolveRepoRoot(electronDist: string): string {
   return join(electronDist, '..', '..', '..');
 }
 
-export function resolveEngineRoot(opts: {
-  isPackaged: boolean;
-  resourcesPath: string;
-  repoRoot: string;
-}): { root: string } {
-  if (opts.isPackaged) {
-    return { root: join(opts.resourcesPath, 'opencode-engine') };
-  }
-  return {
-    root: join(opts.repoRoot, 'apps', 'liner-electron', 'build', 'opencode'),
-  };
-}
-
 export function resolveBunExecutable(opts: {
   isPackaged: boolean;
   resourcesPath: string;

@@ -37,7 +37,7 @@ export async function createLinerRuntime(
     DEFAULT_WORKSPACE_ID;
   const store = new OutlineStore(id);
   const settings = store.getSettings();
-  const rpc = await createConnectedRpcAdapter(settings, rpcMode);
+  const rpc = await createConnectedRpcAdapter(settings, rpcMode, store);
   const harness = new HarnessOrchestrator(store, rpc, {
     strictPlanGate: settings.strictPlanGate,
   });

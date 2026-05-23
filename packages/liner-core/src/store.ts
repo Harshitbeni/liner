@@ -12,6 +12,7 @@ import type {
   Point,
   PointPriority,
   PointState,
+  ThreadMessage,
 } from './types.ts';
 
 function now(): string {
@@ -103,8 +104,6 @@ export class OutlineStore {
       theme: 'system',
       strictPlanGate: false,
       autoAgents: true,
-      opencodeBaseUrl: 'http://127.0.0.1:4096',
-      aiProviderId: 'anthropic',
     });
   }
 
@@ -120,12 +119,6 @@ export class OutlineStore {
       theme: (map.theme as LinerSettings['theme']) ?? 'system',
       strictPlanGate: map.strictPlanGate === 'true',
       autoAgents: map.autoAgents !== 'false',
-      opencodeBaseUrl:
-        map.opencodeBaseUrl ??
-        (map.craftRpcUrl?.startsWith('http')
-          ? map.craftRpcUrl
-          : 'http://127.0.0.1:4096'),
-      aiProviderId: map.aiProviderId ?? 'anthropic',
     };
   }
 
@@ -138,8 +131,6 @@ export class OutlineStore {
       ['theme', next.theme],
       ['strictPlanGate', String(next.strictPlanGate)],
       ['autoAgents', String(next.autoAgents)],
-      ['opencodeBaseUrl', next.opencodeBaseUrl],
-      ['aiProviderId', next.aiProviderId],
     ];
     for (const [key, value] of entries) {
       this.db.run(
@@ -518,6 +509,42 @@ export class OutlineStore {
       payload,
       createdAt: ts,
     };
+  }
+
+  appendThreadMessage(message: ThreadMessage): void {
+    this.db.run(
+      `INSERT INTO thread_messages (id, session_id, role, content, meta, created_at)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         content = excluded.content,
+         meta = excluded.meta`,
+      [
+        message.id,
+        message.sessionId,
+        message.role,
+        message.content,
+        JSON.stringify(message.meta ?? {}),
+        message.createdAt,
+      ],
+    );
+  }
+
+  listThreadMessages(sessionId: string): ThreadMessage[] {
+    const rows = this.db
+      .query(
+        `SELECT * FROM thread_messages
+         WHERE session_id = ?
+         ORDER BY created_at ASC`,
+      )
+      .all(sessionId) as Record<string, unknown>[];
+    return rows.map((row) => ({
+      id: row.id as string,
+      sessionId: row.session_id as string,
+      role: row.role as ThreadMessage['role'],
+      content: row.content as string,
+      createdAt: row.created_at as string,
+      meta: parseJson(row.meta as string, {}),
+    }));
   }
 
   listHarnessEvents(pointId: string, limit = 50): HarnessEvent[] {

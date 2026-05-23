@@ -1,23 +1,18 @@
-import { join } from 'node:path';
 import {
-  applyEngineEnv,
   createLinerRuntime,
   createWorkspace,
-  OpenCodeSessionRpcAdapter,
+  CursorSdkSessionRpcAdapter,
+  CURSOR_DEFAULT_MODEL,
   OutlineStore,
   getEngineInfo,
-  isOpencodeServerReachable,
-  isManagedEngineEnabled,
+  hasCursorApiKey,
   isMockFallbackAllowed,
   isPackagedMode,
   listWorkspaces,
   isValidWorkspaceId,
   readLinerAuth,
-  setProviderApiKey,
-  PROVIDER_OPTIONS,
-  resolveBunExecutable,
-  startManagedEngine,
-  stopManagedEngine,
+  setCursorApiKey,
+  workspaceDir,
   listSubagents,
   listSkills,
   verifyEngineConnection,
@@ -55,10 +50,18 @@ function installHarnessBridge(
   harnessAgentBridgeInstalled = true;
 }
 
+function preferredRpcMode(): 'mock' | 'cursor-sdk' | undefined {
+  const env = process.env.LINER_RPC_MODE as 'mock' | 'cursor-sdk' | undefined;
+  if (env === 'cursor-sdk') return 'cursor-sdk';
+  if (hasCursorApiKey()) return 'cursor-sdk';
+  if (env === 'mock') return 'mock';
+  return undefined;
+}
+
 async function initRuntime(workspaceId?: string): Promise<NonNullable<typeof runtime>> {
   const id = workspaceId ?? activeWorkspaceId;
   activeWorkspaceId = id;
-  const preferred = process.env.LINER_RPC_MODE as 'mock' | 'opencode' | undefined;
+  const preferred = preferredRpcMode();
   if (runtime) {
     await runtime.rpc.disconnect();
   }
@@ -71,7 +74,6 @@ async function initRuntime(workspaceId?: string): Promise<NonNullable<typeof run
 }
 
 async function getRuntime() {
-  if (isManagedEngineEnabled()) await ensureEngineBoot();
   if (runtime) return runtime;
   if (!runtimeInit) {
     runtimeInit = initRuntime(activeWorkspaceId).finally(() => {
@@ -108,25 +110,17 @@ async function buildHealthLight(): Promise<{
   engine: ReturnType<typeof getEngineInfo>;
 }> {
   const engine = getEngineInfo();
-  const baseUrl =
-    process.env.OPENCODE_BASE_URL ?? 'http://127.0.0.1:4096';
-  const rpcMode = process.env.LINER_RPC_MODE ?? 'opencode';
-  let engineReachable = false;
-  let lastError: string | null = engine.error;
-
-  if (engine.state === 'ready' || engine.state === 'starting') {
-    engineReachable = await isOpencodeServerReachable(baseUrl, 5_000);
-  }
-
-  if (engine.state === 'starting' && !engineReachable) {
-    lastError = lastError ?? 'AI engine is starting…';
-  }
+  const hasKey = hasCursorApiKey();
+  const rpcMode = hasKey ? 'cursor-sdk' : (process.env.LINER_RPC_MODE ?? 'mock');
+  const lastError: string | null = hasKey
+    ? engine.error
+    : (engine.error ?? 'Cursor API key not configured');
 
   return {
     ok: true,
     rpc: rpcMode,
     connected: false,
-    engineReachable,
+    engineReachable: hasKey,
     lastError,
     workspaceId: activeWorkspaceId,
     engine,
@@ -135,59 +129,39 @@ async function buildHealthLight(): Promise<{
 
 async function buildHealth(rt: Awaited<ReturnType<typeof getRuntime>>) {
   const { store, rpc } = rt;
-  const settings = store.getSettings();
   const connected = rpc.isConnected();
-  let engineReachable = false;
+  const engine = getEngineInfo();
+  let engineReachable = hasCursorApiKey();
   let lastError: string | null = null;
 
-  if (rpc.mode === 'opencode' && rpc instanceof OpenCodeSessionRpcAdapter) {
-    engineReachable = rpc.isOpencodeNative();
-    lastError = rpc.getLastError();
-    if (!engineReachable) {
-      engineReachable = await isOpencodeServerReachable(
-        settings.opencodeBaseUrl,
-        5_000,
-      );
-    }
-  } else {
-    engineReachable = await isOpencodeServerReachable(
-      settings.opencodeBaseUrl,
-      5_000,
-    );
-    if (rpc.mode === 'mock') {
-      lastError = engineReachable
-        ? null
-        : isPackagedMode()
-          ? 'AI engine unavailable — using demo mode. Check Settings → AI Provider.'
-          : 'Using mock RPC — OpenCode server not reachable';
-    }
-  }
-
-  const engine = getEngineInfo();
-  if (
-    rpc.mode === 'opencode' &&
-    rpc instanceof OpenCodeSessionRpcAdapter &&
-    !rpc.isOpencodeNative()
-  ) {
-    const err =
-      rpc.getLastError() ??
-      engine.error ??
-      'OpenCode RPC unreachable';
-    lastError = lastError ?? err;
+  if (rpc.mode === 'mock') {
+    engineReachable = false;
+    lastError = isPackagedMode()
+      ? 'Cursor SDK unavailable — using demo mode. Check Settings → Cursor SDK.'
+      : 'Using mock RPC — add Cursor API key for Composer 2.5';
     if (isMockFallbackAllowed()) {
       engine.state = 'mock-fallback';
-      if (!lastError) {
-        lastError = 'Connected via demo fallback';
-      }
+    }
+  } else if (rpc instanceof CursorSdkSessionRpcAdapter) {
+    engineReachable = rpc.isSdkNative();
+    lastError = rpc.getLastError();
+    if (rpc.isSdkNative()) {
+      engine.state = 'ready';
     } else {
-      engine.state = 'failed';
+      const err = lastError ?? engine.error ?? 'Cursor SDK unavailable';
+      lastError = err;
+      if (isMockFallbackAllowed()) {
+        engine.state = 'mock-fallback';
+        lastError = lastError ?? 'Connected via demo fallback';
+      } else {
+        engine.state = 'failed';
+      }
     }
   }
 
-  if (isPackagedMode() && engine.state === 'ready' && engineReachable) {
-    engine.state = 'ready';
-  } else if (isPackagedMode() && engine.state === 'starting' && engineReachable) {
-    engine.state = 'ready';
+  if (!hasCursorApiKey()) {
+    lastError = lastError ?? 'Cursor API key not configured';
+    engineReachable = false;
   }
 
   return {
@@ -231,82 +205,6 @@ async function bridgePointSession(pointId: string): Promise<void> {
   );
 }
 
-async function bootManagedEngine(): Promise<void> {
-  if (!isManagedEngineEnabled()) return;
-
-  if (!process.env.LINER_RPC_MODE) {
-    process.env.LINER_RPC_MODE = 'opencode';
-  }
-
-  const isPackaged = isPackagedMode();
-  const repoRoot =
-    process.env.LINER_REPO_ROOT ?? join(import.meta.dir, '..', '..', '..');
-  const resourcesPath = process.env.LINER_RESOURCES_PATH;
-  const { path: bunPath } = resolveBunExecutable({
-    isPackaged,
-    resourcesPath,
-  });
-
-  const result = await startManagedEngine({
-    isPackaged,
-    resourcesPath,
-    repoRoot,
-    engineRootOverride: process.env.LINER_ENGINE_ROOT,
-    opencodePort: Number(process.env.OPENCODE_PORT ?? 4096),
-    opencodeBaseUrl:
-      process.env.OPENCODE_BASE_URL ?? 'http://127.0.0.1:4096',
-    bunPath,
-    pipeStdio: isPackaged,
-    waitTimeoutMs: isPackaged ? 180_000 : 45_000,
-  });
-  applyEngineEnv(result);
-
-  if (result.state === 'ready') {
-    if (result.reason === 'already-running') {
-      console.log(
-        '[liner] AI engine already running at',
-        process.env.OPENCODE_BASE_URL ?? 'http://127.0.0.1:4096',
-      );
-    } else {
-      console.log('[liner] AI engine ready');
-    }
-  } else {
-    console.warn('[liner]', result.error ?? 'AI engine failed to start');
-  }
-}
-
-function registerEngineShutdown(): void {
-  const onStop = () => {
-    stopManagedEngine();
-  };
-  process.on('SIGINT', onStop);
-  process.on('SIGTERM', onStop);
-  process.on('exit', onStop);
-}
-
-let engineBootPromise: Promise<void> | null = null;
-
-function ensureEngineBoot(): Promise<void> {
-  if (!engineBootPromise) {
-    applyEngineEnv({
-      state: 'starting',
-      error: null,
-      version: null,
-      source: isPackagedMode() ? 'bundled' : 'dev',
-      started: false,
-    });
-    engineBootPromise = bootManagedEngine().catch((e) => {
-      console.warn('[liner] engine boot failed', e);
-    });
-  }
-  return engineBootPromise;
-}
-
-registerEngineShutdown();
-if (isManagedEngineEnabled()) {
-  void ensureEngineBoot();
-}
-
 let server: ReturnType<typeof Bun.serve>;
 try {
   server = Bun.serve({
@@ -328,7 +226,6 @@ try {
       try {
         if (path === '/health' && req.method === 'GET') {
           if (!runtime) {
-            if (isManagedEngineEnabled()) void ensureEngineBoot();
             return json(await buildHealthLight());
           }
           const rt = await getRuntime();
@@ -360,56 +257,46 @@ try {
           const settings = getStore().getSettings();
           const auth = readLinerAuth();
           return json({
-            providers: PROVIDER_OPTIONS,
-            selectedProviderId: settings.aiProviderId,
+            model: CURSOR_DEFAULT_MODEL,
+            modelLabel: 'Composer 2.5',
+            workspaceSandbox: workspaceDir(settings.workspaceId),
+            hasApiKey: hasCursorApiKey(),
             auth,
           });
         }
 
-        if (isManagedEngineEnabled()) await ensureEngineBoot();
-        const rt = await getRuntime();
-        const { store, rpc, harness } = rt;
-
-        if (path === '/verify-engine' && req.method === 'POST') {
-          await ensureEngineBoot();
-          const rtForVerify = await getRuntime();
-          const settings = rtForVerify.store.getSettings();
-          let engineReachable = await isOpencodeServerReachable(
-            settings.opencodeBaseUrl,
-            8_000,
-          );
-          if (isManagedEngineEnabled() && !engineReachable) {
-            stopManagedEngine();
-            engineBootPromise = null;
-            await ensureEngineBoot();
-            harnessAgentBridgeInstalled = false;
-            await initRuntime(activeWorkspaceId);
-          }
-          const rtFresh = await getRuntime();
-          const freshSettings = rtFresh.store.getSettings();
-          const result = await verifyEngineConnection({
-            opencodeBaseUrl: freshSettings.opencodeBaseUrl,
-            forceOpencode: process.env.LINER_RPC_MODE === 'opencode',
-            skip: process.env.ENGINE_SKIP === '1',
-          });
-          return json(result);
-        }
-
         if (path === '/provider' && req.method === 'POST') {
           const body = await parseBody(req);
-          const providerId = String(body.providerId ?? '').trim();
-          const apiKey = String(body.apiKey ?? '');
-          if (!providerId) return json({ error: 'providerId required' }, 400);
-          const auth = setProviderApiKey(providerId, apiKey);
-          if (body.selectedProviderId) {
-            store.setSettings({
-              aiProviderId: String(body.selectedProviderId),
-            });
-          } else {
-            store.setSettings({ aiProviderId: providerId });
+          const apiKey = String(body.apiKey ?? '').trim();
+          let auth = readLinerAuth();
+          if (apiKey) {
+            auth = setCursorApiKey(apiKey);
+          } else if (body.clearKey === true) {
+            auth = setCursorApiKey('');
+          }
+          harnessAgentBridgeInstalled = false;
+          if (runtime) {
+            await initRuntime(activeWorkspaceId);
           }
           return json({ ok: true, auth });
         }
+
+        if (path === '/verify-engine' && req.method === 'POST') {
+          const result = await verifyEngineConnection({
+            forceCursorSdk:
+              hasCursorApiKey() ||
+              process.env.LINER_RPC_MODE === 'cursor-sdk',
+            skip: process.env.ENGINE_SKIP === '1',
+          });
+          harnessAgentBridgeInstalled = false;
+          if (runtime) {
+            await initRuntime(activeWorkspaceId);
+          }
+          return json(result);
+        }
+
+        const rt = await getRuntime();
+        const { store, rpc, harness } = rt;
 
         if (path === '/workspaces' && req.method === 'GET') {
           return json(listWorkspaces(activeWorkspaceId));

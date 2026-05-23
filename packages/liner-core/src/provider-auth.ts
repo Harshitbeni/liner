@@ -2,23 +2,15 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
-/** OpenCode-compatible auth store at ~/.liner/auth.json */
-export type LinerAuthEntry =
-  | { type: 'api'; key: string }
-  | { type: 'oauth'; access: string; refresh?: string; expires?: number }
-  | Record<string, unknown>;
+/** Cursor API key store at ~/.liner/auth.json */
+export type CursorAuthEntry = { type: 'api'; key: string };
 
-export type LinerAuthFile = Record<string, LinerAuthEntry>;
+export type LinerAuthFile = {
+  cursor?: CursorAuthEntry;
+  [providerId: string]: CursorAuthEntry | Record<string, unknown> | undefined;
+};
 
-export const PROVIDER_OPTIONS = [
-  { id: 'anthropic', label: 'Anthropic', hint: 'Claude API key' },
-  { id: 'openai', label: 'OpenAI', hint: 'OpenAI API key' },
-  { id: 'openrouter', label: 'OpenRouter', hint: 'OpenRouter API key' },
-  { id: 'google', label: 'Google AI', hint: 'Gemini API key' },
-  { id: 'ollama', label: 'Ollama', hint: 'Local — no key required' },
-] as const;
-
-export type ProviderId = (typeof PROVIDER_OPTIONS)[number]['id'];
+export const CURSOR_MODEL_LABEL = 'Composer 2.5';
 
 export function linerAuthPath(): string {
   return join(homedir(), '.liner', 'auth.json');
@@ -40,35 +32,26 @@ export function writeLinerAuth(next: LinerAuthFile): void {
   writeFileSync(path, JSON.stringify(next, null, 2) + '\n', 'utf8');
 }
 
-export function setProviderApiKey(
-  providerId: string,
-  apiKey: string,
-): LinerAuthFile {
+export function getCursorApiKey(): string | null {
+  const entry = readLinerAuth().cursor;
+  if (entry?.type === 'api' && typeof entry.key === 'string' && entry.key.trim()) {
+    return entry.key.trim();
+  }
+  return null;
+}
+
+export function setCursorApiKey(apiKey: string): LinerAuthFile {
   const auth = readLinerAuth();
   const trimmed = apiKey.trim();
   if (!trimmed) {
-    delete auth[providerId];
+    delete auth.cursor;
   } else {
-    auth[providerId] = { type: 'api', key: trimmed };
+    auth.cursor = { type: 'api', key: trimmed };
   }
   writeLinerAuth(auth);
   return auth;
 }
 
-export function getConfiguredProviders(): string[] {
-  return Object.keys(readLinerAuth()).filter((id) => {
-    const entry = readLinerAuth()[id];
-    return entry && typeof entry === 'object' && 'key' in entry && entry.key;
-  });
-}
-
-export function hasProviderKey(providerId: string): boolean {
-  const entry = readLinerAuth()[providerId];
-  return Boolean(
-    entry &&
-      typeof entry === 'object' &&
-      entry.type === 'api' &&
-      typeof entry.key === 'string' &&
-      entry.key.trim(),
-  );
+export function hasCursorApiKey(): boolean {
+  return Boolean(getCursorApiKey());
 }
