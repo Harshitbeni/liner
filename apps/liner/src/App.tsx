@@ -2,7 +2,7 @@ import * as React from 'react';
 import type { ImperativePanelGroupHandle } from 'react-resizable-panels';
 import type { Area, Point } from '@liner/core';
 import { IconPlusSmall } from '@central-icons-react/round-outlined-radius-3-stroke-1.5/IconPlusSmall';
-import { IconSettingsGear1 } from '@central-icons-react/round-outlined-radius-3-stroke-1.5/IconSettingsGear1';
+import { IconSettingsGear1 } from '@central-icons-react/round-filled-radius-3-stroke-1.5/IconSettingsGear1';
 import { api, type HealthResponse, subscribePointEvents } from './api';
 import { useToast } from './toast';
 import { OutlineTree } from './components/OutlineTree';
@@ -270,12 +270,16 @@ export default function App() {
     [refresh, selectArea],
   );
 
-  const renderAreaRow = (a: Area, options?: { readonly?: boolean }) => (
+  const renderAreaRow = (
+    a: Area,
+    options?: { readonly?: boolean; indent?: boolean },
+  ) => (
     <button
       key={a.id}
       type="button"
       className={cn(
-        'mb-px flex w-full cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-left text-13 transition-colors',
+        'mb-px flex w-full cursor-pointer items-center gap-2 py-1.5 pl-[6px] pr-2 text-left text-13 transition-colors',
+        options?.indent ? 'rounded-[6px]' : 'rounded-full',
         selectedAreaId === a.id
           ? 'bg-accent text-foreground'
           : 'text-muted-foreground hover:bg-neutral-100 hover:text-foreground [data-theme=dark]:hover:bg-neutral-700',
@@ -395,7 +399,7 @@ export default function App() {
               className="app-gutter app-gutter-left"
             >
           <ScrollArea className="flex-1">
-            <nav className="px-1 pb-2 pt-3">
+            <nav className="p-[6px]">
               {renderAreaRow(inboxNavArea, { readonly: !inbox })}
               {renderAreaRow(todayArea, { readonly: true })}
 
@@ -421,7 +425,7 @@ export default function App() {
                   No areas yet
                 </p>
               ) : (
-                userAreas.map((a) => renderAreaRow(a))
+                userAreas.map((a) => renderAreaRow(a, { indent: true }))
               )}
             </nav>
           </ScrollArea>

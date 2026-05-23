@@ -1018,7 +1018,7 @@ export function OutlineTree({
 
   if (roots.length === 0) {
     return (
-      <div className="px-1 pb-1 pt-3">
+      <div className="px-1 pb-1 pt-[4px]">
         <div className="px-2 py-12 text-center text-13 text-muted-foreground">
           <p>{isToday ? 'Nothing worked on yet today' : 'No tasks'}</p>
           {!isToday ? (
@@ -1084,7 +1084,7 @@ export function OutlineTree({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      <div className="px-1 pb-1 pt-3" role="tree">
+      <div className="px-1 pb-1 pt-[4px]" role="tree">
       {visibleRows.map((row, index) => {
         const { point, parentId, siblings, hasChildren, touched, guides } = row;
         const branch =
@@ -1106,7 +1106,7 @@ export function OutlineTree({
             key={point.id}
             role="treeitem"
             className={cn(
-              'outline-row group flex cursor-pointer items-stretch gap-1 pr-2 pl-2 text-13',
+              'outline-row group flex cursor-pointer items-stretch gap-1 pr-2 pl-[8px] text-13',
               multiSelect && isInSelection
                 ? multiSelectRadiusRole === 'start'
                   ? 'rounded-t-sm'
@@ -1160,7 +1160,7 @@ export function OutlineTree({
             ))}
             <div
               className={cn(
-                'outline-row-content flex min-w-0 flex-1 items-center gap-1 py-1.5',
+                'outline-row-content flex min-w-0 flex-1 items-center gap-[2px] py-1.5',
                 selectedId && !multiSelect && !inBranch && 'dimmed',
               )}
             >
@@ -1168,7 +1168,7 @@ export function OutlineTree({
               {hasChildren ? (
                 <button
                   type="button"
-                  className="flex size-5 cursor-pointer items-center justify-center text-foreground/70 hover:text-foreground"
+                  className="flex size-5 cursor-pointer items-center justify-center rounded-full text-foreground/70 hover:text-foreground"
                   aria-label={isCollapsed ? 'Expand' : 'Collapse'}
                   onClick={(e) => toggleCollapse(point.id, hasChildren, e)}
                 >
@@ -1178,7 +1178,13 @@ export function OutlineTree({
                     <IconChevronDownSmall size={16} ariaHidden />
                   )}
                 </button>
-              ) : null}
+              ) : (
+                <IconChevronRightSmall
+                  size={16}
+                  ariaHidden
+                  className="shrink-0 text-muted-foreground/40"
+                />
+              )}
             </span>
             <StateBadge state={point.state} iconOnly />
             <InlineRename
@@ -1209,7 +1215,7 @@ export function OutlineTree({
             ) : null}
             {isToday && areaLabel ? (
               <span
-                className="max-w-[80px] shrink-0 truncate rounded-full border-[1.5px] border-border bg-muted/50 px-1.5 py-0.5 text-12 text-muted-foreground"
+                className="max-w-[80px] shrink-0 truncate rounded-full border-[1.5px] border-[rgba(0,0,0,0.08)] bg-[rgba(245,245,245,0)] px-1.5 py-0.5 text-12 text-muted-foreground"
                 title={areaLabel}
               >
                 {areaLabel}
@@ -1231,7 +1237,7 @@ export function OutlineTree({
             {isToday && onGoToPoint ? (
               <button
                 type="button"
-                className="flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-sm text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-hover:opacity-100"
+                className="flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-hover:opacity-100"
                 aria-label={`Open in ${areaLabel ?? 'area'}`}
                 title={`Open in ${areaLabel ?? 'area'}`}
                 onClick={(e) => {

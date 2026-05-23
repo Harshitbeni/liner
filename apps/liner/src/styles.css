@@ -113,6 +113,31 @@ body,
   position: relative;
 }
 
+.composer-shell-expanded {
+  min-height: 104px;
+}
+
+.composer-shortcut {
+  display: inline-flex;
+  min-width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted-foreground);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+}
+
+.composer-shortcut:hover {
+  color: var(--foreground);
+  background: var(--accent);
+}
+
 .mention-menu {
   position: absolute;
   bottom: 100%;
@@ -138,7 +163,7 @@ body,
   border: none;
   background: transparent;
   padding: 6px 8px;
-  border-radius: calc(var(--radius) - 2px);
+  border-radius: 9999px;
   cursor: pointer;
   font-size: 13px;
   line-height: 18px;

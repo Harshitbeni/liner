@@ -4,10 +4,8 @@ import { IconEyeOpen } from '@central-icons-react/round-filled-radius-3-stroke-1
 import { IconLoader } from '@central-icons-react/round-filled-radius-3-stroke-1/IconLoader';
 import { api, subscribePointEvents } from '../api';
 import { CommentCard } from './CommentCard';
-import {
-  MentionAutocomplete,
-  type MentionItem,
-} from './MentionAutocomplete';
+import type { MentionItem } from './MentionAutocomplete';
+import { ThreadComposer } from './ThreadComposer';
 import { InlineRename } from './InlineRename';
 import { formatStateLabel, StateIcon } from './state-badge';
 import { Button } from '@/components/ui/button';
@@ -268,7 +266,7 @@ export function PointDetail({
 
   return (
     <div className="detail-layout">
-      <div className="shrink-0 border-b border-border px-4 py-3">
+      <div className="shrink-0 border-b border-border p-[12px]">
         <InlineRename
           value={point.task}
           size="lg"
@@ -297,7 +295,9 @@ export function PointDetail({
             >
               <SelectValue>
                 <span className="flex items-center gap-1.5 capitalize">
-                  <StateIcon state={point.state} />
+                  <span className="inline-flex size-5 shrink-0 items-center justify-center">
+                    <StateIcon state={point.state} />
+                  </span>
                   {formatStateLabel(point.state)}
                 </span>
               </SelectValue>
@@ -313,6 +313,16 @@ export function PointDetail({
               ))}
             </SelectContent>
           </Select>
+          <button
+            type="button"
+            className="flex h-7 w-full min-w-0 cursor-pointer items-center gap-1.5 px-1 text-13 text-muted-foreground hover:text-foreground"
+            onClick={() => setMetaOpen((o) => !o)}
+          >
+            <span className="inline-flex size-5 shrink-0 items-center justify-center">
+              <IconEyeOpen size={12} ariaHidden />
+            </span>
+            {metaOpen ? 'Hide' : 'Show'} plan & git
+          </button>
         </div>
         {point.state === 'todo' ||
         point.state === 'needs-review' ||
@@ -361,14 +371,6 @@ export function PointDetail({
           ) : null}
         </div>
         ) : null}
-        <button
-          type="button"
-          className="mt-2 flex cursor-pointer items-center gap-1 text-12 text-muted-foreground hover:text-foreground"
-          onClick={() => setMetaOpen((o) => !o)}
-        >
-          <IconEyeOpen size={12} ariaHidden className="shrink-0" />
-          {metaOpen ? 'Hide' : 'Show'} plan & git
-        </button>
       </div>
 
       {metaOpen ? (
@@ -446,7 +448,7 @@ export function PointDetail({
       ) : null}
 
       <div className="thread-panel min-h-0 flex-1">
-        <ScrollArea className="flex-1 px-4 py-3">
+        <ScrollArea className="flex-1 p-[12px]">
           <div className="flex flex-col gap-2">
             {messages.length === 0 ? (
               <p className="text-13 text-muted-foreground">No messages yet</p>
@@ -463,52 +465,19 @@ export function PointDetail({
           </div>
         </ScrollArea>
         <Separator />
-        <div className="composer composer-with-mentions shrink-0 px-4 py-3">
-          {pendingQuote ? (
-            <p className="mb-2 truncate text-12 text-muted-foreground">
-              Quote: {pendingQuote.slice(0, 60)}
-              {pendingQuote.length > 60 ? '…' : ''}
-              <button
-                type="button"
-                className="ml-2 cursor-pointer underline"
-                onClick={() => setPendingQuote(null)}
-              >
-                clear
-              </button>
-            </p>
-          ) : null}
-          <MentionAutocomplete
-            items={mentionItems}
-            query={mentionQuery}
-            prefix={mentionPrefix ?? '@'}
-            visible={mentionPrefix !== null}
-            onSelect={insertMention}
-          />
-          <Textarea
-            ref={composerRef}
-            className="min-h-[56px] resize-none border-border bg-transparent text-14 shadow-none"
-            value={composer}
-            onChange={(e) => {
-              setComposer(e.target.value);
-              updateComposerMentions(e.target.value, e.target.selectionStart);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) send();
-            }}
-            rows={2}
-            placeholder="Reply…"
-          />
-          <div className="mt-2 flex justify-end">
-            <Button
-              type="button"
-              variant="ghost"
-              className="text-13 h-7"
-              onClick={send}
-            >
-              Send
-            </Button>
-          </div>
-        </div>
+        <ThreadComposer
+          value={composer}
+          onChange={setComposer}
+          onSend={send}
+          inputRef={composerRef}
+          pendingQuote={pendingQuote}
+          onClearQuote={() => setPendingQuote(null)}
+          mentionItems={mentionItems}
+          mentionQuery={mentionQuery}
+          mentionPrefix={mentionPrefix}
+          onSelectMention={insertMention}
+          onUpdateMentions={updateComposerMentions}
+        />
       </div>
     </div>
   );

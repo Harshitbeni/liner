@@ -91,7 +91,7 @@ export function InlineRename({
     >
       <span
         className={cn(
-          'block w-full truncate',
+          'block w-full truncate text-sm',
           editing && 'invisible',
         )}
         aria-hidden={editing}
@@ -107,7 +107,7 @@ export function InlineRename({
           aria-label={ariaLabel ?? 'Rename'}
           placeholder={placeholder}
           className={cn(
-            'absolute inset-0 box-border w-full min-w-0 appearance-none border-0 bg-transparent p-0 font-[inherit] text-inherit shadow-none outline-none ring-0 focus:shadow-none focus:outline-none focus:ring-0 focus-visible:shadow-none focus-visible:outline-none focus-visible:ring-0',
+            'absolute inset-0 box-border w-full min-w-0 appearance-none border-0 bg-transparent p-0 text-sm font-[inherit] text-inherit shadow-none outline-none ring-0 focus:shadow-none focus:outline-none focus:ring-0 focus-visible:shadow-none focus-visible:outline-none focus-visible:ring-0',
             metrics,
             inputClassName,
           )}
