@@ -1215,7 +1215,7 @@ export function OutlineTree({
             ) : null}
             {isToday && areaLabel ? (
               <span
-                className="max-w-[80px] shrink-0 truncate rounded-full border-[1.5px] border-[rgba(0,0,0,0.08)] bg-[rgba(245,245,245,0)] px-1.5 py-0.5 text-12 text-muted-foreground"
+                className="shrink-0 rounded-full border-[1.5px] border-[rgba(0,0,0,0.08)] bg-[rgba(245,245,245,0)] px-1.5 py-0.5 text-12 text-muted-foreground"
                 title={areaLabel}
               >
                 {areaLabel}

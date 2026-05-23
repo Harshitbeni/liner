@@ -6,6 +6,7 @@ import { IconFormCircle } from '@central-icons-react/round-outlined-radius-3-str
 import { IconProgress25 } from '@central-icons-react/round-outlined-radius-3-stroke-2/IconProgress25';
 import { IconProgress50 } from '@central-icons-react/round-outlined-radius-3-stroke-2/IconProgress50';
 import { IconProgress100 } from '@central-icons-react/round-outlined-radius-3-stroke-2/IconProgress100';
+import { IconCircleCheck } from '@central-icons-react/round-filled-radius-3-stroke-1.5/IconCircleCheck';
 import { IconExclamationCircle } from '@central-icons-react/round-outlined-radius-3-stroke-2/IconExclamationCircle';
 import type { CentralIconBaseProps } from '@central-icons-react/round-outlined-radius-3-stroke-2/CentralIconBase';
 import { cn } from '@/lib/utils';
@@ -17,7 +18,7 @@ const STATE_ICONS: Record<PointState, ComponentType<CentralIconBaseProps>> = {
   'in-progress': IconProgress25,
   waiting: IconProgress50,
   done: IconProgress100,
-  shipped: IconProgress100,
+  shipped: IconCircleCheck,
   cancelled: IconCircleX,
 };
 

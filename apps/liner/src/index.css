@@ -50,7 +50,7 @@
   --input: theme(colors.neutral.800);
   --ring: theme(colors.neutral.600);
   --sidebar: theme(colors.neutral.950);
-  --canvas: color-mix(in srgb, theme(colors.neutral.800) 85%, theme(colors.neutral.900));
+  --canvas: theme(colors.neutral.900);
   --selection: color-mix(in srgb, theme(colors.sky.900) 55%, transparent);
   --selection-foreground: theme(colors.sky.50);
 }

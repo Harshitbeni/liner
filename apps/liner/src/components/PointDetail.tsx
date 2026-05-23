@@ -7,6 +7,7 @@ import { CommentCard } from './CommentCard';
 import type { MentionItem } from './MentionAutocomplete';
 import { ThreadComposer } from './ThreadComposer';
 import { InlineRename } from './InlineRename';
+import { DetailSidebarToggle } from './DetailSidebarToggle';
 import { formatStateLabel, StateIcon } from './state-badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -36,6 +37,8 @@ type Props = {
   pointId: string;
   onUpdated: () => void;
   onNewPoint: () => void;
+  detailCollapsed?: boolean;
+  onToggleDetailSidebar?: () => void;
   onStateNotice?: (
     from: PointState,
     to: PointState,
@@ -55,6 +58,8 @@ export function PointDetail({
   pointId,
   onUpdated,
   onNewPoint,
+  detailCollapsed = false,
+  onToggleDetailSidebar,
   onStateNotice,
 }: Props) {
   const [point, setPoint] = React.useState<Point | null>(null);
@@ -266,18 +271,26 @@ export function PointDetail({
 
   return (
     <div className="detail-layout">
-      <div className="shrink-0 border-b border-border p-[12px]">
-        <InlineRename
-          value={point.task}
-          size="lg"
-          aria-label="Task title"
-          className="font-medium"
-          onSave={async (task) => {
-            await api.updatePoint(pointId, { task });
-            setPoint((p) => (p ? { ...p, task } : p));
-            onUpdated();
-          }}
-        />
+      <div className="shrink-0 border-b border-border pt-[16px] pr-[8px] pb-[8px] pl-[8px]">
+        <div className="flex items-center gap-0.5 pl-[8px] pr-0">
+          <InlineRename
+            value={point.task}
+            size="lg"
+            aria-label="Task title"
+            className="min-w-0 flex-1 font-medium"
+            onSave={async (task) => {
+              await api.updatePoint(pointId, { task });
+              setPoint((p) => (p ? { ...p, task } : p));
+              onUpdated();
+            }}
+          />
+          {!detailCollapsed && onToggleDetailSidebar ? (
+            <DetailSidebarToggle
+              collapsed={false}
+              onToggle={onToggleDetailSidebar}
+            />
+          ) : null}
+        </div>
         <div className="mt-2 flex flex-col gap-1">
           {agentRunning ? (
             <span className="inline-flex items-center gap-1 text-12 text-muted-foreground">

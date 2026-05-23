@@ -34,9 +34,9 @@ const PROGRESS_TIER_ICONS: Record<
 const PROGRESS_TIER_COLORS: Record<AreaProgressTier, string> = {
   empty: 'text-neutral-400',
   todo: 'text-muted-foreground',
-  'partial-25': 'text-green-600',
-  'partial-50': 'text-green-600',
-  complete: 'text-green-600',
+  'partial-25': 'text-muted-foreground',
+  'partial-50': 'text-muted-foreground',
+  complete: 'text-muted-foreground',
 };
 
 type Props = {

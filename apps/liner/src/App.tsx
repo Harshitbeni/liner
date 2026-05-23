@@ -6,6 +6,7 @@ import { IconSettingsGear1 } from '@central-icons-react/round-filled-radius-3-st
 import { api, type HealthResponse, subscribePointEvents } from './api';
 import { useToast } from './toast';
 import { OutlineTree } from './components/OutlineTree';
+import { DetailSidebarToggle } from './components/DetailSidebarToggle';
 import { PointDetail } from './components/PointDetail';
 import { FirstRunWizard } from './components/FirstRunWizard';
 import { SettingsModal } from './components/SettingsModal';
@@ -32,6 +33,14 @@ import {
   syntheticTodayArea,
 } from '@/lib/areas';
 import { TODAY_VIEW_ID, startOfLocalDayIso } from '@/lib/today';
+import {
+  DETAIL_PANEL_MOTION_MS,
+  DEFAULT_INNER_LAYOUT,
+  layoutWithDetailCollapsed,
+  prefersReducedPanelMotion,
+  toInnerLayout,
+  toStoredLayout,
+} from '@/lib/detail-panel-motion';
 import { cn } from '@/lib/utils';
 import {
   DEFAULT_PANEL_LAYOUT,
@@ -69,37 +78,118 @@ export default function App() {
   const [panelLayout, setPanelLayout] = React.useState<number[]>(() =>
     loadLayoutSizes(),
   );
-  const panelGroupRef = React.useRef<ImperativePanelGroupHandle>(null);
+  const outerPanelGroupRef = React.useRef<ImperativePanelGroupHandle>(null);
+  const innerPanelGroupRef = React.useRef<ImperativePanelGroupHandle>(null);
+  const panelLayoutAnimatingRef = React.useRef(false);
+  const innerLayout = React.useMemo(() => toInnerLayout(panelLayout), [panelLayout]);
+  const lastDetailSizeRef = React.useRef(innerLayout[1]);
+  const [detailCollapsed, setDetailCollapsed] = React.useState(
+    () => innerLayout[1] < 0.5,
+  );
+  const [panelLayoutAnimating, setPanelLayoutAnimating] = React.useState(false);
+  const [panelClosing, setPanelClosing] = React.useState(false);
+
+  const animateDetailPanel = React.useCallback((collapsed: boolean) => {
+    const inner = innerPanelGroupRef.current;
+    if (!inner) return;
+
+    const current = inner.getLayout();
+    if (!collapsed && current[1] > 0) {
+      lastDetailSizeRef.current = current[1];
+    }
+
+    const target = layoutWithDetailCollapsed(
+      current,
+      collapsed,
+      lastDetailSizeRef.current,
+    );
+    const duration = prefersReducedPanelMotion() ? 0 : DETAIL_PANEL_MOTION_MS;
+
+    const commit = (innerSizes: number[]) => {
+      const nav =
+        outerPanelGroupRef.current?.getLayout()[0] ?? panelLayout[0];
+      const stored = toStoredLayout(nav, [innerSizes[0], innerSizes[1]]);
+      setPanelLayout(stored);
+      saveLayoutSizes(stored);
+      if (!collapsed && innerSizes[1] > 0) {
+        lastDetailSizeRef.current = innerSizes[1];
+      }
+    };
+
+    if (duration === 0) {
+      inner.setLayout(target);
+      setDetailCollapsed(collapsed);
+      commit(target);
+      return;
+    }
+
+    panelLayoutAnimatingRef.current = true;
+    setPanelLayoutAnimating(true);
+    setPanelClosing(collapsed);
+    setDetailCollapsed(collapsed);
+    inner.setLayout(target);
+
+    window.setTimeout(() => {
+      panelLayoutAnimatingRef.current = false;
+      setPanelLayoutAnimating(false);
+      setPanelClosing(false);
+      commit(inner.getLayout());
+    }, duration);
+  }, [panelLayout]);
+
+  const toggleDetailSidebar = React.useCallback(() => {
+    animateDetailPanel(!detailCollapsed);
+  }, [animateDetailPanel, detailCollapsed]);
 
   const refresh = () => setRefreshKey((k) => k + 1);
 
-  const onPanelLayout = React.useCallback((sizes: number[]) => {
-    setPanelLayout(sizes);
-    saveLayoutSizes(sizes);
-  }, []);
+  const onOuterPanelLayout = React.useCallback(
+    (sizes: number[]) => {
+      const inner =
+        innerPanelGroupRef.current?.getLayout() ?? innerLayout;
+      const stored = toStoredLayout(sizes[0], [inner[0], inner[1]]);
+      setPanelLayout(stored);
+      if (!panelLayoutAnimatingRef.current) {
+        saveLayoutSizes(stored);
+      }
+    },
+    [innerLayout],
+  );
 
-  const resetAdjacentPanels = React.useCallback(
-    (leftIndex: number, rightIndex: number) => {
-      const current = [
-        ...(panelGroupRef.current?.getLayout() ?? panelLayout),
-      ];
-      const thirdIndex = ([0, 1, 2] as const).find(
-        (i) => i !== leftIndex && i !== rightIndex,
-      )!;
-      const thirdSize = current[thirdIndex];
-      const remaining = 100 - thirdSize;
-      const leftDefault = DEFAULT_PANEL_LAYOUT[leftIndex];
-      const rightDefault = DEFAULT_PANEL_LAYOUT[rightIndex];
-      const defaultSum = leftDefault + rightDefault;
-      const layout = [...current];
-      layout[leftIndex] = (leftDefault / defaultSum) * remaining;
-      layout[rightIndex] = (rightDefault / defaultSum) * remaining;
-      panelGroupRef.current?.setLayout(layout);
-      setPanelLayout(layout);
-      saveLayoutSizes(layout);
+  const onInnerPanelLayout = React.useCallback(
+    (sizes: number[]) => {
+      const nav =
+        outerPanelGroupRef.current?.getLayout()[0] ?? panelLayout[0];
+      const stored = toStoredLayout(nav, [sizes[0], sizes[1]]);
+      setPanelLayout(stored);
+      if (!panelLayoutAnimatingRef.current) {
+        saveLayoutSizes(stored);
+        if (sizes[1] > 0) lastDetailSizeRef.current = sizes[1];
+        setDetailCollapsed(sizes[1] < 0.5);
+      }
     },
     [panelLayout],
   );
+
+  const resetNavWorkspace = React.useCallback(() => {
+    const nav = DEFAULT_PANEL_LAYOUT[0];
+    const workspace = 100 - nav;
+    outerPanelGroupRef.current?.setLayout([nav, workspace]);
+    const inner =
+      innerPanelGroupRef.current?.getLayout() ?? innerLayout;
+    const stored = toStoredLayout(nav, [inner[0], inner[1]]);
+    setPanelLayout(stored);
+    saveLayoutSizes(stored);
+  }, [innerLayout]);
+
+  const resetSurfaceDetail = React.useCallback(() => {
+    innerPanelGroupRef.current?.setLayout([...DEFAULT_INNER_LAYOUT]);
+    const nav =
+      outerPanelGroupRef.current?.getLayout()[0] ?? panelLayout[0];
+    const stored = toStoredLayout(nav, [...DEFAULT_INNER_LAYOUT]);
+    setPanelLayout(stored);
+    saveLayoutSizes(stored);
+  }, [panelLayout]);
 
   const selectArea = React.useCallback(async (id: string) => {
     let areaId = id;
@@ -273,16 +363,19 @@ export default function App() {
   const renderAreaRow = (
     a: Area,
     options?: { readonly?: boolean; indent?: boolean },
-  ) => (
+  ) => {
+    const todayRow = isTodayView(a.id);
+    return (
     <button
       key={a.id}
       type="button"
       className={cn(
-        'mb-px flex w-full cursor-pointer items-center gap-2 py-1.5 pl-[6px] pr-2 text-left text-13 transition-colors',
-        options?.indent ? 'rounded-[6px]' : 'rounded-full',
+        'mb-px flex w-full cursor-pointer items-center gap-2 py-1.5 pr-2 text-left text-13 transition-colors',
+        todayRow ? 'pl-[8px]' : 'pl-[6px]',
+        todayRow || options?.indent ? 'rounded-[6px]' : 'rounded-full',
         selectedAreaId === a.id
           ? 'bg-accent text-foreground'
-          : 'text-muted-foreground hover:bg-neutral-100 hover:text-foreground [data-theme=dark]:hover:bg-neutral-700',
+          : 'text-muted-foreground hover:bg-accent hover:text-foreground',
       )}
       onClick={() => void selectArea(a.id)}
     >
@@ -310,7 +403,8 @@ export default function App() {
         />
       )}
     </button>
-  );
+    );
+  };
 
   const saveAreaDescription = async () => {
     if (
@@ -385,10 +479,10 @@ export default function App() {
 
         <div className="app-canvas">
           <ResizablePanelGroup
-            ref={panelGroupRef}
+            ref={outerPanelGroupRef}
             direction="horizontal"
             className="app-layout"
-            onLayout={onPanelLayout}
+            onLayout={onOuterPanelLayout}
           >
             <ResizablePanel
               id="nav"
@@ -399,7 +493,7 @@ export default function App() {
               className="app-gutter app-gutter-left"
             >
           <ScrollArea className="flex-1">
-            <nav className="p-[6px]">
+            <nav className="px-[6px] pb-[6px] pt-[12px]">
               {renderAreaRow(inboxNavArea, { readonly: !inbox })}
               {renderAreaRow(todayArea, { readonly: true })}
 
@@ -449,16 +543,47 @@ export default function App() {
 
             <ResizableHandle
               className="app-resize-handle"
-              onDoubleClick={() => resetAdjacentPanels(0, 1)}
+              onDoubleClick={resetNavWorkspace}
             />
 
             <ResizablePanel
-              id="surface"
+              id="workspace"
               order={2}
-              defaultSize={panelLayout[1] ?? DEFAULT_PANEL_LAYOUT[1]}
-              minSize={25}
-              className="main-surface"
+              defaultSize={
+                (panelLayout[1] ?? DEFAULT_PANEL_LAYOUT[1]) +
+                (panelLayout[2] ?? DEFAULT_PANEL_LAYOUT[2])
+              }
+              minSize={40}
+              className="flex min-h-0 min-w-0 flex-col"
             >
+              <ResizablePanelGroup
+                ref={innerPanelGroupRef}
+                direction="horizontal"
+                className={cn(
+                  'h-full min-h-0',
+                  panelLayoutAnimating && 'app-layout--panel-animating',
+                  panelClosing && 'app-layout--panel-closing',
+                )}
+                onLayout={onInnerPanelLayout}
+              >
+            <ResizablePanel
+              id="surface"
+              order={1}
+              defaultSize={innerLayout[0]}
+              minSize={25}
+              className={cn(
+                'main-surface relative',
+                detailCollapsed && 'mr-2',
+              )}
+            >
+          {detailCollapsed && !panelLayoutAnimating ? (
+            <DetailSidebarToggle
+              collapsed
+              floating
+              onToggle={toggleDetailSidebar}
+              className="absolute top-2 right-2 z-10"
+            />
+          ) : null}
           <ScrollArea className="flex-1">
             {selectedAreaId && !isInboxPlaceholder(selectedAreaId) ? (
               <OutlineTree
@@ -485,17 +610,28 @@ export default function App() {
           </ScrollArea>
             </ResizablePanel>
 
-            <ResizableHandle
-              className="app-resize-handle"
-              onDoubleClick={() => resetAdjacentPanels(1, 2)}
-            />
+            {(!detailCollapsed || panelLayoutAnimating) ? (
+              <ResizableHandle
+                className="app-resize-handle"
+                onDoubleClick={resetSurfaceDetail}
+              />
+            ) : null}
 
             <ResizablePanel
               id="detail"
-              order={3}
-              defaultSize={panelLayout[2] ?? DEFAULT_PANEL_LAYOUT[2]}
+              order={2}
+              defaultSize={innerLayout[1]}
               minSize={20}
               maxSize={45}
+              collapsible
+              collapsedSize={0}
+              onCollapse={() => {
+                setDetailCollapsed(true);
+                lastDetailSizeRef.current =
+                  innerPanelGroupRef.current?.getLayout()[1] ??
+                  lastDetailSizeRef.current;
+              }}
+              onExpand={() => setDetailCollapsed(false)}
               className="app-gutter app-gutter-right"
             >
           {selectedArea ? (
@@ -504,6 +640,8 @@ export default function App() {
                 pointId={selectedPointId}
                 onUpdated={refresh}
                 onNewPoint={() => setShowCreator(true)}
+                detailCollapsed={detailCollapsed}
+                onToggleDetailSidebar={toggleDetailSidebar}
                 onStateNotice={(from, to, actor) =>
                   showToast(
                     `${actor}: ${from.replace(/-/g, ' ')} → ${to.replace(/-/g, ' ')}`,
@@ -512,13 +650,21 @@ export default function App() {
               />
             ) : (
               <div className="flex min-h-0 flex-1 flex-col">
-                <div className="border-b border-border px-4 py-3">
-                  <h2 className="text-16 font-medium">{selectedArea.name}</h2>
-                  <p className="mt-1 text-13 text-muted-foreground">
-                    {isTodayView(selectedAreaId)
-                      ? 'Tasks you worked on today'
-                      : 'Select a task in the outline'}
-                  </p>
+                <div className="flex items-start gap-0.5 border-b border-border px-4 py-3">
+                  <div className="min-w-0 flex-1">
+                    <h2 className="text-16 font-medium">{selectedArea.name}</h2>
+                    <p className="mt-1 text-13 text-muted-foreground">
+                      {isTodayView(selectedAreaId)
+                        ? 'Tasks you worked on today'
+                        : 'Select a task in the outline'}
+                    </p>
+                  </div>
+                  {!detailCollapsed ? (
+                    <DetailSidebarToggle
+                      collapsed={false}
+                      onToggle={toggleDetailSidebar}
+                    />
+                  ) : null}
                 </div>
                 {!isTodayView(selectedAreaId) ? (
                   <div className="flex-1 p-4">
@@ -545,6 +691,8 @@ export default function App() {
               </p>
             </div>
           )}
+            </ResizablePanel>
+              </ResizablePanelGroup>
             </ResizablePanel>
           </ResizablePanelGroup>
         </div>
