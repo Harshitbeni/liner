@@ -22,6 +22,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
+import { useInterfaceKitPrefs } from '../interface-kit-prefs';
 
 type Tab = 'general' | 'provider' | 'agents' | 'appearance' | 'shortcuts';
 type FetchStatus = 'idle' | 'loading' | 'ready' | 'error';
@@ -60,6 +61,7 @@ export function SettingsModal({
   const [fetchStatus, setFetchStatus] = React.useState<FetchStatus>('idle');
   const [fetchError, setFetchError] = React.useState<string | null>(null);
   const [agentsError, setAgentsError] = React.useState<string | null>(null);
+  const interfaceKit = useInterfaceKitPrefs();
 
   const formatLoadError = (e: unknown) => {
     if (e instanceof Error) {
@@ -159,7 +161,7 @@ export function SettingsModal({
                 key={t.id}
                 type="button"
                 className={cn(
-                  'cursor-pointer rounded-md px-3 py-2 text-left text-sm transition-colors',
+                  'cursor-pointer rounded-full px-3 py-2 text-left text-sm transition-colors',
                   tab === t.id
                     ? 'bg-accent font-medium text-accent-foreground'
                     : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground',
@@ -324,26 +326,47 @@ export function SettingsModal({
                 </ul>
               ) : null}
 
-              {tab === 'appearance' && fetchStatus !== 'ready' ? settingsTabMessage() : null}
-
-              {tab === 'appearance' && fetchStatus === 'ready' && settings ? (
-                <div className="space-y-2">
-                  <Label>Theme</Label>
-                  <Select
-                    value={settings.theme}
-                    onValueChange={(v) =>
-                      patch({ theme: v as LinerSettings['theme'] })
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="system">System</SelectItem>
-                      <SelectItem value="dark">Dark</SelectItem>
-                      <SelectItem value="light">Light</SelectItem>
-                    </SelectContent>
-                  </Select>
+              {tab === 'appearance' ? (
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <label className="flex cursor-pointer items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        className="size-4 rounded border-input"
+                        checked={interfaceKit.enabled}
+                        onChange={(e) =>
+                          interfaceKit.setEnabled(e.target.checked)
+                        }
+                      />
+                      Interface Kit (visual editor)
+                    </label>
+                    <p className="text-xs text-muted-foreground">
+                      Shows a paintbrush control to inspect and tweak UI styles
+                      in the app.
+                    </p>
+                  </div>
+                  <Separator />
+                  {fetchStatus !== 'ready' ? settingsTabMessage() : null}
+                  {fetchStatus === 'ready' && settings ? (
+                    <div className="space-y-2">
+                      <Label>Theme</Label>
+                      <Select
+                        value={settings.theme}
+                        onValueChange={(v) =>
+                          patch({ theme: v as LinerSettings['theme'] })
+                        }
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="system">System</SelectItem>
+                          <SelectItem value="dark">Dark</SelectItem>
+                          <SelectItem value="light">Light</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
 

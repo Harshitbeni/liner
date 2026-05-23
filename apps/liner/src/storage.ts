@@ -1,5 +1,6 @@
 const AREA_KEY = 'liner:selectedAreaId';
 const LAYOUT_KEY = 'liner:panelLayout';
+const INTERFACE_KIT_KEY = 'liner:interfaceKitEnabled';
 const pointKey = (areaId: string) => `liner:selectedPointId:${areaId}`;
 
 export const DEFAULT_PANEL_LAYOUT = [18, 54, 28] as const;
@@ -64,6 +65,23 @@ export function saveSelectedPointId(
   try {
     if (pointId) localStorage.setItem(pointKey(areaId), pointId);
     else localStorage.removeItem(pointKey(areaId));
+  } catch {
+    /* ignore */
+  }
+}
+
+export function loadInterfaceKitEnabled(): boolean {
+  try {
+    return localStorage.getItem(INTERFACE_KIT_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+export function saveInterfaceKitEnabled(enabled: boolean): void {
+  try {
+    if (enabled) localStorage.setItem(INTERFACE_KIT_KEY, '1');
+    else localStorage.removeItem(INTERFACE_KIT_KEY);
   } catch {
     /* ignore */
   }
