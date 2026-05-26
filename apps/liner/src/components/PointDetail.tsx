@@ -1,5 +1,11 @@
 import * as React from 'react';
-import type { HarnessEvent, Point, PointState, ThreadMessage } from '@liner/core';
+import type {
+  HarnessEvent,
+  Point,
+  PointState,
+  TaskPhoto,
+  ThreadMessage,
+} from '@liner/core';
 import { IconEyeOpen } from '@central-icons-react/round-filled-radius-3-stroke-1/IconEyeOpen';
 import { IconLoader } from '@central-icons-react/round-filled-radius-3-stroke-1/IconLoader';
 import { api, subscribePointEvents } from '../api';
@@ -8,6 +14,7 @@ import type { MentionItem } from './MentionAutocomplete';
 import { ThreadComposer } from './ThreadComposer';
 import { InlineRename } from './InlineRename';
 import { DetailSidebarToggle } from './DetailSidebarToggle';
+import { TaskDescriptionField } from './TaskDescriptionField';
 import { formatStateLabel, StateIcon } from './state-badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -65,6 +72,8 @@ export function PointDetail({
   const [point, setPoint] = React.useState<Point | null>(null);
   const [messages, setMessages] = React.useState<ThreadMessage[]>([]);
   const [plan, setPlan] = React.useState('');
+  const [taskDescription, setTaskDescription] = React.useState('');
+  const [taskPhotos, setTaskPhotos] = React.useState<TaskPhoto[]>([]);
   const [notes, setNotes] = React.useState('');
   const [composer, setComposer] = React.useState('');
   const [pendingQuote, setPendingQuote] = React.useState<string | null>(null);
@@ -118,6 +127,8 @@ export function PointDetail({
     const { point: p } = await api.getPoint(pointId);
     setPoint(p);
     setPlan(p.description);
+    setTaskDescription(p.taskDescription ?? '');
+    setTaskPhotos(p.taskPhotos ?? []);
     setNotes(p.notes);
     setGitBranch(typeof p.meta?.branch === 'string' ? p.meta.branch : '');
     setGitPrUrl(typeof p.meta?.prUrl === 'string' ? p.meta.prUrl : '');
@@ -188,6 +199,30 @@ export function PointDetail({
   const savePlan = async () => {
     await api.updatePoint(pointId, { description: plan });
     onUpdated();
+  };
+
+  const saveTaskDescription = async (
+    description: string,
+    photos: TaskPhoto[],
+  ) => {
+    try {
+      const updated = await api.updatePoint(pointId, {
+        taskDescription: description,
+        taskPhotos: photos,
+      });
+      setPoint((p) =>
+        p
+          ? {
+              ...p,
+              taskDescription: updated.taskDescription ?? '',
+              taskPhotos: updated.taskPhotos ?? [],
+            }
+          : p,
+      );
+      onUpdated();
+    } catch {
+      // Keep editing; a failed save should not crash the detail panel.
+    }
   };
 
   const saveNotes = async () => {
@@ -291,6 +326,20 @@ export function PointDetail({
             />
           ) : null}
         </div>
+        <div className="mt-3 px-[8px]">
+          <TaskDescriptionField
+            variant="minimal"
+            idPrefix={`point-${pointId}`}
+            description={taskDescription}
+            photos={taskPhotos}
+            onDescriptionChange={setTaskDescription}
+            onPhotosChange={(photos) => {
+              setTaskPhotos(photos);
+              void saveTaskDescription(taskDescription, photos);
+            }}
+            onSave={(desc) => saveTaskDescription(desc, taskPhotos)}
+          />
+        </div>
         <div className="mt-2 flex flex-col gap-1">
           {agentRunning ? (
             <span className="inline-flex items-center gap-1 text-12 text-muted-foreground">
@@ -339,8 +388,7 @@ export function PointDetail({
         </div>
         {point.state === 'todo' ||
         point.state === 'needs-review' ||
-        point.state === 'in-progress' ||
-        point.state === 'done' ? (
+        point.state === 'in-progress' ? (
         <div className="mt-2 flex flex-wrap gap-1">
           {point.state === 'todo' ? (
             <Button
@@ -370,16 +418,6 @@ export function PointDetail({
               onClick={() => runAgent('execute')}
             >
               Execute
-            </Button>
-          ) : null}
-          {point.state === 'done' ? (
-            <Button
-              type="button"
-              variant="ghost"
-              className="text-13 h-7 px-2"
-              onClick={() => changeState('shipped')}
-            >
-              Ship
             </Button>
           ) : null}
         </div>

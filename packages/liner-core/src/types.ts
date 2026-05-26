@@ -12,9 +12,17 @@ export type PointPriority = 'none' | 'low' | 'medium' | 'high' | 'urgent';
 
 export const TERMINAL_CHILD_STATES: PointState[] = ['shipped', 'cancelled'];
 
+export type TaskPhoto = {
+  id: string;
+  dataUrl: string;
+};
+
 export type Point = {
   id: string;
   task: string;
+  /** User-facing task description (stored in meta). */
+  taskDescription: string;
+  taskPhotos: TaskPhoto[];
   description: string;
   notes: string;
   state: PointState;
@@ -45,7 +53,8 @@ export type HarnessEventType =
   | 'completion-verification-requested'
   | 'completion-verification-completed'
   | 'parent-waiting'
-  | 'parent-unblocked';
+  | 'parent-unblocked'
+  | 'parent-approval-blocked';
 
 export type HarnessEvent = {
   id: string;

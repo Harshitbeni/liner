@@ -10,6 +10,8 @@ function point(state: Point['state']): Point {
   return {
     id: '1',
     task: 't',
+    taskDescription: '',
+    taskPhotos: [],
     description: '',
     notes: '',
     state,

@@ -2,6 +2,7 @@ import * as React from 'react';
 import type { ImperativePanelGroupHandle } from 'react-resizable-panels';
 import type { Area, Point } from '@liner/core';
 import { IconPlusSmall } from '@central-icons-react/round-outlined-radius-3-stroke-1.5/IconPlusSmall';
+import { IconTrashCan } from '@central-icons-react/round-outlined-radius-3-stroke-1.5/IconTrashCan';
 import { IconSettingsGear1 } from '@central-icons-react/round-filled-radius-3-stroke-1.5/IconSettingsGear1';
 import { api, type HealthResponse, subscribePointEvents } from './api';
 import { useToast } from './toast';
@@ -15,6 +16,18 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+import {
   ResizableHandle,
   ResizablePanel,
   ResizablePanelGroup,
@@ -26,7 +39,9 @@ import {
   type AreaProgress,
 } from '@/lib/area-progress';
 import {
+  isInboxArea,
   isInboxPlaceholder,
+  isSmartView,
   isTodayView,
   partitionAreas,
   syntheticInboxArea,
@@ -45,8 +60,10 @@ import { cn } from '@/lib/utils';
 import {
   DEFAULT_PANEL_LAYOUT,
   loadLayoutSizes,
+  loadOnboarded,
   loadSelectedAreaId,
   loadSelectedPointId,
+  markOnboarded,
   saveLayoutSizes,
   saveSelectedAreaId,
   saveSelectedPointId,
@@ -69,11 +86,16 @@ export default function App() {
   const [runningPointIds, setRunningPointIds] = React.useState<Set<string>>(
     () => new Set(),
   );
-  const [showFirstRun, setShowFirstRun] = React.useState(false);
+  const [onboarded, setOnboarded] = React.useState(() => loadOnboarded());
   const [areaProgress, setAreaProgress] = React.useState<
     Record<string, AreaProgress>
   >({});
   const [defaultAreaId, setDefaultAreaId] = React.useState<string | null>(null);
+  const [deleteAreaConfirmOpen, setDeleteAreaConfirmOpen] =
+    React.useState(false);
+  const [pendingDeleteArea, setPendingDeleteArea] = React.useState<Area | null>(
+    null,
+  );
   const todaySince = React.useMemo(() => startOfLocalDayIso(), [refreshKey]);
   const [panelLayout, setPanelLayout] = React.useState<number[]>(() =>
     loadLayoutSizes(),
@@ -271,14 +293,6 @@ export default function App() {
   }, [selectedAreaId, areas]);
 
   React.useEffect(() => {
-    if (!selectedAreaId || isTodayView(selectedAreaId)) return;
-    api.listPoints(selectedAreaId, null).then((roots) => {
-      const dismissed = localStorage.getItem('liner:first-run-dismissed');
-      if (roots.length === 0 && !dismissed) setShowFirstRun(true);
-    });
-  }, [selectedAreaId, refreshKey]);
-
-  React.useEffect(() => {
     let cancelled = false;
     const jobs: Promise<readonly [string, AreaProgress]>[] = [
       api.listTodayPoints(todaySince).then((points) => {
@@ -332,6 +346,9 @@ export default function App() {
     () => partitionAreas(areas),
     [areas],
   );
+  const onboardingAreaId = defaultAreaId ?? inbox?.id ?? null;
+  const needsOnboarding = !onboarded && onboardingAreaId !== null;
+
   const inboxNavArea = inbox ?? syntheticInboxArea();
   const todayArea = syntheticTodayArea();
   const selectedArea = isTodayView(selectedAreaId)
@@ -360,49 +377,101 @@ export default function App() {
     [refresh, selectArea],
   );
 
+  const performDeleteArea = React.useCallback(
+    async (area: Area) => {
+      await api.deleteArea(area.id);
+      const list = await api.listAreas();
+      setAreas(list);
+      if (selectedAreaId === area.id) {
+        const { inbox, userAreas: remaining } = partitionAreas(list);
+        if (inbox) {
+          void selectArea(inbox.id);
+        } else if (remaining[0]) {
+          void selectArea(remaining[0].id);
+        } else {
+          void selectArea(TODAY_VIEW_ID);
+        }
+      }
+      setRefreshKey((k) => k + 1);
+    },
+    [selectArea, selectedAreaId],
+  );
+
   const renderAreaRow = (
     a: Area,
-    options?: { readonly?: boolean; indent?: boolean },
+    options?: { readonly?: boolean; indent?: boolean; deletable?: boolean },
   ) => {
     const todayRow = isTodayView(a.id);
+    const deletable =
+      options?.deletable ??
+      (!options?.readonly &&
+        !isSmartView(a.id) &&
+        !isInboxArea(a));
     return (
-    <button
-      key={a.id}
-      type="button"
-      className={cn(
-        'mb-px flex w-full cursor-pointer items-center gap-2 py-1.5 pr-2 text-left text-13 transition-colors',
-        todayRow ? 'pl-[8px]' : 'pl-[6px]',
-        todayRow || options?.indent ? 'rounded-[6px]' : 'rounded-full',
-        selectedAreaId === a.id
-          ? 'bg-accent text-foreground'
-          : 'text-muted-foreground hover:bg-accent hover:text-foreground',
-      )}
-      onClick={() => void selectArea(a.id)}
-    >
-      <AreaProgressIcon
-        area={a}
-        progress={
-          areaProgress[a.id] ?? {
-            total: 0,
-            completed: 0,
-            ratio: 0,
-          }
-        }
-      />
-      {options?.readonly ? (
-        <span className="flex-1 truncate">{a.name}</span>
-      ) : (
-        <InlineRename
-          value={a.name}
-          aria-label={`Rename area ${a.name}`}
-          className="flex-1"
-          onSave={async (name) => {
-            await api.updateArea(a.id, { name });
-            setAreas(await api.listAreas());
-          }}
-        />
-      )}
-    </button>
+      <div
+        key={a.id}
+        className={cn(
+          'group mb-px flex w-full items-center gap-0.5',
+          todayRow ? 'pl-[8px]' : 'pl-[6px]',
+        )}
+      >
+        <button
+          type="button"
+          className={cn(
+            'flex min-w-0 flex-1 cursor-pointer items-center gap-2 py-1.5 pr-2 text-left text-13 transition-colors',
+            todayRow || options?.indent ? 'rounded-[6px]' : 'rounded-full',
+            selectedAreaId === a.id
+              ? 'bg-accent text-foreground'
+              : 'text-muted-foreground hover:bg-accent hover:text-foreground',
+          )}
+          onClick={() => void selectArea(a.id)}
+        >
+          <AreaProgressIcon
+            area={a}
+            progress={
+              areaProgress[a.id] ?? {
+                total: 0,
+                completed: 0,
+                ratio: 0,
+              }
+            }
+          />
+          {options?.readonly ? (
+            <span className="flex-1 truncate">{a.name}</span>
+          ) : (
+            <InlineRename
+              value={a.name}
+              aria-label={`Rename area ${a.name}`}
+              className="flex-1"
+              onSave={async (name) => {
+                await api.updateArea(a.id, { name });
+                setAreas(await api.listAreas());
+              }}
+            />
+          )}
+        </button>
+        {deletable ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-xs"
+                className="mr-1 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-foreground"
+                aria-label="Delete Area"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setPendingDeleteArea(a);
+                  setDeleteAreaConfirmOpen(true);
+                }}
+              >
+                <IconTrashCan size={14} ariaHidden />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Delete Area</TooltipContent>
+          </Tooltip>
+        ) : null}
+      </div>
     );
   };
 
@@ -456,6 +525,49 @@ export default function App() {
 
   return (
     <>
+      <Dialog
+        open={deleteAreaConfirmOpen}
+        onOpenChange={(open) => {
+          setDeleteAreaConfirmOpen(open);
+          if (!open) setPendingDeleteArea(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Delete area?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            {pendingDeleteArea
+              ? `“${pendingDeleteArea.name}” and all tasks in it will be removed permanently.`
+              : 'This area and all tasks in it will be removed permanently.'}
+          </p>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setDeleteAreaConfirmOpen(false);
+                setPendingDeleteArea(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={!pendingDeleteArea}
+              onClick={() => {
+                const area = pendingDeleteArea;
+                setDeleteAreaConfirmOpen(false);
+                setPendingDeleteArea(null);
+                if (area) void performDeleteArea(area);
+              }}
+            >
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <div className="app-frame">
         {showRpcBanner ? (
           <div className="rpc-banner" role="status">
@@ -497,30 +609,29 @@ export default function App() {
               {renderAreaRow(inboxNavArea, { readonly: !inbox })}
               {renderAreaRow(todayArea, { readonly: true })}
 
-              <div className="mt-1 flex h-7 items-center justify-between px-2">
-                <span className="text-12 text-muted-foreground">Areas</span>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-xs"
-                  className="text-muted-foreground"
-                  aria-label="New area"
-                  onClick={async () => {
-                    const a = await api.createArea('New Area');
-                    setAreas(await api.listAreas());
-                    void selectArea(a.id);
-                  }}
-                >
-                  <IconPlusSmall size={16} ariaHidden />
-                </Button>
-              </div>
-              {userAreas.length === 0 ? (
-                <p className="px-2 pb-1 text-12 text-muted-foreground">
-                  No areas yet
-                </p>
-              ) : (
-                userAreas.map((a) => renderAreaRow(a, { indent: true }))
+              <div
+                className="mx-2 my-2 h-px bg-border/80"
+                role="separator"
+                aria-hidden
+              />
+              {userAreas.map((a) =>
+                renderAreaRow(a, { indent: true, deletable: true }),
               )}
+              <button
+                type="button"
+                className="mb-px flex w-full cursor-pointer items-center gap-2 rounded-[6px] py-1.5 pr-2 pl-[6px] text-left text-13 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                aria-label="New area"
+                onClick={async () => {
+                  const a = await api.createArea('New Area');
+                  setAreas(await api.listAreas());
+                  void selectArea(a.id);
+                }}
+              >
+                <span className="flex size-4 shrink-0 items-center justify-center">
+                  <IconPlusSmall size={16} ariaHidden />
+                </span>
+                <span className="flex-1 truncate">New Area</span>
+              </button>
             </nav>
           </ScrollArea>
           <div className="flex shrink-0 items-center justify-between border-t border-border px-2 py-1.5">
@@ -584,7 +695,7 @@ export default function App() {
               className="absolute top-2 right-2 z-10"
             />
           ) : null}
-          <ScrollArea className="flex-1">
+          <div className="flex min-h-0 flex-1 flex-col">
             {selectedAreaId && !isInboxPlaceholder(selectedAreaId) ? (
               <OutlineTree
                 areaId={selectedAreaId}
@@ -603,11 +714,11 @@ export default function App() {
                 }
               />
             ) : (
-              <p className="px-3 py-12 text-center text-13 text-muted-foreground">
+              <p className="flex flex-1 items-center justify-center px-3 text-center text-13 text-muted-foreground">
                 Select an area
               </p>
             )}
-          </ScrollArea>
+          </div>
             </ResizablePanel>
 
             {(!detailCollapsed || panelLayoutAnimating) ? (
@@ -710,18 +821,22 @@ export default function App() {
         />
       ) : null}
 
-      {showFirstRun && creatorAreaId && !isTodayView(selectedAreaId) ? (
+      {needsOnboarding && onboardingAreaId ? (
         <FirstRunWizard
-          areaId={creatorAreaId}
-          onDone={(id) => {
-            localStorage.setItem('liner:first-run-dismissed', '1');
-            setShowFirstRun(false);
+          open={needsOnboarding}
+          areaId={onboardingAreaId}
+          initialName={
+            areas.find((a) => a.id === onboardingAreaId)?.name ?? 'Inbox'
+          }
+          onComplete={() => {
+            markOnboarded();
+            setOnboarded(true);
+            void api.listAreas().then(setAreas);
             refresh();
-            selectPoint(id);
           }}
           onDismiss={() => {
-            localStorage.setItem('liner:first-run-dismissed', '1');
-            setShowFirstRun(false);
+            markOnboarded();
+            setOnboarded(true);
           }}
         />
       ) : null}

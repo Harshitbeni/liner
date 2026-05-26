@@ -367,3 +367,42 @@ export async function loadTodayTree(since: string): Promise<{
 
   return { roots, childrenMap, touchedIds };
 }
+
+export type SiblingReorderResult = {
+  parentId: string | null;
+  orderedIds: string[];
+};
+
+/** Swap focused row with adjacent sibling; no-op when blocked by list bounds or parent row. */
+export function computeSiblingReorder(
+  row: VisibleRow,
+  direction: 'up' | 'down',
+  visibleRows: VisibleRow[],
+  focusIndex: number,
+): SiblingReorderResult | null {
+  const { siblings, parentId, point } = row;
+  const sibIdx = siblings.findIndex((s) => s.id === point.id);
+  if (sibIdx < 0) return null;
+
+  if (direction === 'up') {
+    const rowAbove = visibleRows[focusIndex - 1];
+    if (parentId && rowAbove?.point.id === parentId) return null;
+    if (sibIdx <= 0) return null;
+    const orderedIds = siblings.map((s) => s.id);
+    [orderedIds[sibIdx - 1], orderedIds[sibIdx]] = [
+      orderedIds[sibIdx],
+      orderedIds[sibIdx - 1],
+    ];
+    return { parentId, orderedIds };
+  }
+
+  const rowBelow = visibleRows[focusIndex + 1];
+  if (parentId && rowBelow?.point.id === parentId) return null;
+  if (sibIdx >= siblings.length - 1) return null;
+  const orderedIds = siblings.map((s) => s.id);
+  [orderedIds[sibIdx], orderedIds[sibIdx + 1]] = [
+    orderedIds[sibIdx + 1],
+    orderedIds[sibIdx],
+  ];
+  return { parentId, orderedIds };
+}

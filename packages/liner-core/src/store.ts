@@ -12,8 +12,46 @@ import type {
   Point,
   PointPriority,
   PointState,
+  TaskPhoto,
   ThreadMessage,
 } from './types.ts';
+import { parseTaskPhotos } from './point-fields.ts';
+
+function taskFieldsFromMeta(meta: Record<string, unknown>): {
+  taskDescription: string;
+  taskPhotos: TaskPhoto[];
+} {
+  return {
+    taskDescription:
+      typeof meta.taskDescription === 'string' ? meta.taskDescription : '',
+    taskPhotos: parseTaskPhotos(meta.taskPhotos),
+  };
+}
+
+function mergeTaskMeta(
+  meta: Record<string, unknown>,
+  input: {
+    taskDescription?: string;
+    taskPhotos?: TaskPhoto[];
+  },
+): Record<string, unknown> {
+  const next = { ...meta };
+  if (input.taskDescription !== undefined) {
+    if (input.taskDescription.trim()) {
+      next.taskDescription = input.taskDescription;
+    } else {
+      delete next.taskDescription;
+    }
+  }
+  if (input.taskPhotos !== undefined) {
+    if (input.taskPhotos.length > 0) {
+      next.taskPhotos = input.taskPhotos;
+    } else {
+      delete next.taskPhotos;
+    }
+  }
+  return next;
+}
 
 function now(): string {
   return new Date().toISOString();
@@ -28,9 +66,13 @@ function parseJson<T>(raw: string, fallback: T): T {
 }
 
 function rowToPoint(row: Record<string, unknown>): Point {
+  const meta = parseJson(row.meta as string, {} as Record<string, unknown>);
+  const taskFields = taskFieldsFromMeta(meta);
   return {
     id: row.id as string,
     task: row.task as string,
+    taskDescription: taskFields.taskDescription,
+    taskPhotos: taskFields.taskPhotos,
     description: row.description as string,
     notes: row.notes as string,
     state: row.state as PointState,
@@ -39,7 +81,7 @@ function rowToPoint(row: Record<string, unknown>): Point {
     sessionId: (row.session_id as string | null) ?? null,
     parentId: (row.parent_id as string | null) ?? null,
     childIds: parseJson(row.child_ids as string, []),
-    meta: parseJson(row.meta as string, {}),
+    meta,
     sortOrder: row.sort_order as number,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
@@ -204,6 +246,28 @@ export class OutlineStore {
     return this.getArea(id);
   }
 
+  deleteArea(id: string): boolean {
+    const existing = this.getArea(id);
+    if (!existing) return false;
+    if (existing.name.trim().toLowerCase() === 'inbox') return false;
+    const roots = this.listPoints({ areaId: id, parentId: null });
+    for (const point of roots) {
+      this.deletePoint(point.id);
+    }
+    for (const point of this.listPoints({ areaId: id })) {
+      this.deletePoint(point.id);
+    }
+    this.db.run('DELETE FROM areas WHERE id = ?', [id]);
+    const settings = this.getSettings();
+    if (settings.defaultAreaId === id) {
+      const fallback =
+        this.listAreas().find((a) => a.name.trim().toLowerCase() === 'inbox')
+          ?.id ?? null;
+      this.setSettings({ defaultAreaId: fallback });
+    }
+    return true;
+  }
+
   listPoints(filters?: {
     areaId?: string;
     parentId?: string | null;
@@ -243,6 +307,8 @@ export class OutlineStore {
     task: string;
     areaId: string;
     parentId?: string | null;
+    taskDescription?: string;
+    taskPhotos?: TaskPhoto[];
     description?: string;
     notes?: string;
     state?: PointState;
@@ -270,11 +336,15 @@ export class OutlineStore {
         .get(input.areaId) as { m: number | null };
       sortOrder = (max?.m ?? -1) + 1;
     }
+    const meta = mergeTaskMeta({}, {
+      taskDescription: input.taskDescription,
+      taskPhotos: input.taskPhotos,
+    });
     this.db.run(
       `INSERT INTO points (
         id, task, description, notes, state, priority, area_id, session_id,
         parent_id, child_ids, meta, sort_order, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '[]', '{}', ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '[]', ?, ?, ?, ?)`,
       [
         id,
         input.task,
@@ -285,6 +355,7 @@ export class OutlineStore {
         input.areaId,
         input.sessionId ?? null,
         input.parentId ?? null,
+        JSON.stringify(meta),
         sortOrder,
         ts,
         ts,
@@ -299,6 +370,8 @@ export class OutlineStore {
       Pick<
         Point,
         | 'task'
+        | 'taskDescription'
+        | 'taskPhotos'
         | 'description'
         | 'notes'
         | 'state'
@@ -313,6 +386,18 @@ export class OutlineStore {
     const existing = this.getPoint(id);
     if (!existing) return null;
     const ts = now();
+    let meta = patch.meta
+      ? { ...existing.meta, ...patch.meta }
+      : { ...existing.meta };
+    if (
+      patch.taskDescription !== undefined ||
+      patch.taskPhotos !== undefined
+    ) {
+      meta = mergeTaskMeta(meta, {
+        taskDescription: patch.taskDescription,
+        taskPhotos: patch.taskPhotos,
+      });
+    }
     this.db.run(
       `UPDATE points SET
         task = ?, description = ?, notes = ?, state = ?, priority = ?,
@@ -326,9 +411,7 @@ export class OutlineStore {
         patch.priority ?? existing.priority,
         patch.areaId ?? existing.areaId,
         patch.sessionId !== undefined ? patch.sessionId : existing.sessionId,
-        JSON.stringify(
-          patch.meta ? { ...existing.meta, ...patch.meta } : existing.meta,
-        ),
+        JSON.stringify(meta),
         patch.sortOrder ?? existing.sortOrder,
         ts,
         id,

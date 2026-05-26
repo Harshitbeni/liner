@@ -5,7 +5,8 @@
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./point-fields": "./src/point-fields.ts"
   },
   "scripts": {
     "dev": "bun --watch src/index.ts",

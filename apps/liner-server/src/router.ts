@@ -15,7 +15,12 @@ import {
   resolveMentions,
   prependQuote,
 } from '@liner/core';
-import type { AgentIntent, PointState, PointPriority } from '@liner/core';
+import {
+  isApprovalFlagged,
+  type AgentIntent,
+  type PointState,
+  type PointPriority,
+} from '@liner/core';
 import type { createLinerRuntime } from '@liner/core';
 import {
   broadcastPointMessage,
@@ -205,6 +210,17 @@ export async function handleApiRequest(
     );
   }
 
+  if (path.startsWith('/areas/') && req.method === 'DELETE') {
+    const segments = path.split('/').filter(Boolean);
+    if (segments.length !== 2) {
+      return json({ error: 'Not found' }, 404);
+    }
+    const id = segments[1];
+    const deleted = store.deleteArea(id);
+    if (!deleted) return json({ error: 'Not found' }, 404);
+    return json({ ok: true });
+  }
+
   if (
     path.startsWith('/areas/') &&
     path.endsWith('/run-agent') &&
@@ -273,6 +289,11 @@ export async function handleApiRequest(
       areaId: String(body.areaId),
       parentId: (body.parentId as string | null) ?? null,
       state: (body.state as PointState) ?? 'backlog',
+      taskDescription:
+        typeof body.taskDescription === 'string'
+          ? body.taskDescription
+          : undefined,
+      taskPhotos: Array.isArray(body.taskPhotos) ? body.taskPhotos : undefined,
     });
     return json(point);
   }
@@ -369,6 +390,8 @@ export async function handleApiRequest(
     const metaPatch = body.meta as Record<string, unknown> | undefined;
     const updated = store.updatePoint(id, {
       task: body.task as string | undefined,
+      taskDescription: body.taskDescription as string | undefined,
+      taskPhotos: Array.isArray(body.taskPhotos) ? body.taskPhotos : undefined,
       description: body.description as string | undefined,
       notes: body.notes as string | undefined,
       state: newState,
@@ -390,7 +413,20 @@ export async function handleApiRequest(
         }
       }
     }
-    return json(store.getPoint(id) ?? updated);
+
+    const finalPoint = store.getPoint(id) ?? updated;
+    if (
+      metaPatch &&
+      existing.parentId &&
+      isApprovalFlagged(existing) &&
+      finalPoint &&
+      !isApprovalFlagged(finalPoint)
+    ) {
+      await harness.syncParentFromChildren(existing.parentId);
+      await harness.checkParentCompletion(existing.parentId);
+    }
+
+    return json(finalPoint);
   }
 
   if (

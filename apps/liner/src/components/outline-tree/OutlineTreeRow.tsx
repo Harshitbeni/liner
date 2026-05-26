@@ -1,5 +1,8 @@
 import * as React from 'react';
 import type { Point } from '@liner/core';
+import { isApprovalFlagged } from '../../lib/approval-gate';
+import { IconFlag1 } from '@central-icons-react/round-outlined-radius-3-stroke-2/IconFlag1';
+import { IconFlag1 as IconFlag1Filled } from '@central-icons-react/round-filled-radius-3-stroke-1.5/IconFlag1';
 import { IconArrowRightCircle } from '@central-icons-react/round-filled-radius-3-stroke-1/IconArrowRightCircle';
 import { IconChevronDownSmall } from '@central-icons-react/round-filled-radius-3-stroke-1/IconChevronDownSmall';
 import { IconChevronRightSmall } from '@central-icons-react/round-filled-radius-3-stroke-1/IconChevronRightSmall';
@@ -79,6 +82,17 @@ export function OutlineTreeRow({
   const { point, parentId, siblings, hasChildren, touched, guides } = row;
   const branch =
     typeof point.meta?.branch === 'string' ? point.meta.branch.trim() : '';
+  const flagged = isApprovalFlagged(point);
+  const showProceed = flagged && point.state === 'done';
+
+  const setApprovalFlag = async (requiresApproval: boolean) => {
+    await api.updatePoint(point.id, { meta: { requiresApproval } });
+    onReloadRoots();
+    if (!isToday && point.parentId) {
+      await onLoadChildren(point.parentId);
+    }
+    onPointsChanged?.();
+  };
 
   return (
     <div
@@ -218,6 +232,49 @@ export function OutlineTreeRow({
             <IconArrowRightCircle size={14} ariaHidden />
           </button>
         ) : null}
+        {showProceed ? (
+          <button
+            type="button"
+            tabIndex={-1}
+            className="shrink-0 cursor-pointer rounded-[32px] bg-foreground pt-[4px] pb-[4px] pl-[10px] pr-[10px] text-12 font-semibold text-background hover:bg-foreground/90"
+            aria-label="Proceed — allow parent to continue"
+            title="Proceed — allow parent to continue"
+            onClick={(e) => {
+              e.stopPropagation();
+              void setApprovalFlag(false);
+            }}
+          >
+            Proceed
+          </button>
+        ) : flagged ? (
+          <button
+            type="button"
+            tabIndex={-1}
+            className="flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-full text-orange-500 hover:bg-accent"
+            aria-label="Remove approval requirement"
+            title="Remove approval requirement"
+            onClick={(e) => {
+              e.stopPropagation();
+              void setApprovalFlag(false);
+            }}
+          >
+            <IconFlag1Filled size={14} ariaHidden />
+          </button>
+        ) : (
+          <button
+            type="button"
+            tabIndex={-1}
+            className="flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted-foreground/50 opacity-0 transition-opacity hover:bg-accent hover:text-muted-foreground group-hover:opacity-100"
+            aria-label="Require approval before parent runs"
+            title="Require approval before parent runs"
+            onClick={(e) => {
+              e.stopPropagation();
+              void setApprovalFlag(true);
+            }}
+          >
+            <IconFlag1 size={14} ariaHidden />
+          </button>
+        )}
       </div>
     </div>
   );

@@ -1,6 +1,8 @@
 import * as React from 'react';
 import type { Point } from '@liner/core';
 import { api } from '../api';
+import { toggledApprovalFlagMeta } from '../lib/approval-gate';
+import { CyclingShortcutHints } from './CyclingShortcutHints';
 import { OutlineTreeRow } from './outline-tree/OutlineTreeRow';
 import {
   applyRemovedPointsToTree,
@@ -10,6 +12,7 @@ import {
   collectAllRemovedIds,
   collectDescendantIds,
   collectVisibleSubtreeIds,
+  computeSiblingReorder,
   ensureSubtreeLoaded,
   findPoint,
   idsInVisibleRange,
@@ -20,6 +23,7 @@ import {
   type VisibleRow,
 } from './outline-tree/model';
 import { Button } from '@/components/ui/button';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   Dialog,
   DialogContent,
@@ -292,6 +296,18 @@ export function OutlineTree({
     [visibleRows, applySelection],
   );
 
+  const reorderAmongSiblings = React.useCallback(
+    async (direction: 'up' | 'down') => {
+      const row = visibleRows[focusIndex];
+      if (!row) return;
+      const plan = computeSiblingReorder(row, direction, visibleRows, focusIndex);
+      if (!plan) return;
+      await reorder(plan.parentId, plan.orderedIds);
+      onPointsChanged?.();
+    },
+    [visibleRows, focusIndex, onPointsChanged],
+  );
+
   const multiSelect = selectedIds.size > 1;
 
   const multiSelectRadiusRoles = React.useMemo(
@@ -305,6 +321,28 @@ export function OutlineTree({
     if (selectedId) return [selectedId];
     return [];
   }, [selectedIds, selectedId]);
+
+  const toggleApprovalForSelected = React.useCallback(async () => {
+    if (!selectedId) return;
+    const row = visibleRows.find((r) => r.point.id === selectedId);
+    if (!row) return;
+    const { point } = row;
+    await api.updatePoint(point.id, {
+      meta: toggledApprovalFlagMeta(point),
+    });
+    reloadRoots();
+    if (!isToday && point.parentId) {
+      await loadChildren(point.parentId);
+    }
+    onPointsChanged?.();
+  }, [
+    selectedId,
+    visibleRows,
+    reloadRoots,
+    isToday,
+    loadChildren,
+    onPointsChanged,
+  ]);
 
   const performDelete = React.useCallback(
     async (rawIds: string[]) => {
@@ -455,6 +493,19 @@ export function OutlineTree({
       if (!visibleRows.length) return;
 
       const focused = visibleRows[focusIndex]?.point;
+      const mod = e.metaKey || e.ctrlKey;
+
+      if (
+        mod &&
+        !e.shiftKey &&
+        !e.altKey &&
+        (e.key === 'ArrowUp' || e.key === 'ArrowDown') &&
+        !isToday
+      ) {
+        e.preventDefault();
+        void reorderAmongSiblings(e.key === 'ArrowUp' ? 'up' : 'down');
+        return;
+      }
 
       if (e.key === 'j' || e.key === 'ArrowDown') {
         e.preventDefault();
@@ -470,7 +521,6 @@ export function OutlineTree({
         else selectSingle(next);
         return;
       }
-      const mod = e.metaKey || e.ctrlKey;
 
       if (mod && e.key === 'ArrowRight' && focused) {
         e.preventDefault();
@@ -559,6 +609,18 @@ export function OutlineTree({
         return;
       }
 
+      if (
+        (e.key === 'f' || e.key === 'F') &&
+        !mod &&
+        !e.altKey &&
+        !e.shiftKey
+      ) {
+        if (!selectedId) return;
+        e.preventDefault();
+        void toggleApprovalForSelected();
+        return;
+      }
+
       const row = visibleRows[focusIndex];
       if (!row) return;
 
@@ -613,6 +675,7 @@ export function OutlineTree({
     areaId,
     selectSingle,
     extendSelectionTo,
+    reorderAmongSiblings,
     isToday,
     applyMove,
     selectedId,
@@ -620,6 +683,7 @@ export function OutlineTree({
     renamingPointId,
     selectedIdsForDelete,
     performDelete,
+    toggleApprovalForSelected,
   ]);
 
   const onDragStart = (
@@ -657,15 +721,12 @@ export function OutlineTree({
 
   if (roots.length === 0) {
     return (
-      <div className="px-1 pb-1 pt-[4px]">
-        <div className="px-2 py-12 text-center text-13 text-muted-foreground">
-          <p>{isToday ? 'Nothing worked on yet today' : 'No tasks'}</p>
-          {!isToday ? (
-            <p className="mt-1 text-12">
-              ⌘N new task · ⌥N child · j/k navigate · Delete remove · ⌘Delete
-              remove without confirm
-            </p>
-          ) : null}
+      <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-1 pb-1 pt-[4px]">
+        <div className="px-2 text-center text-13 text-muted-foreground">
+          <p className="font-medium text-sm [&_:is(span,p,h1,h2,h3,h4,h5,h6,a,label)]:font-medium [&_:is(span,p,h1,h2,h3,h4,h5,h6,a,label)]:text-sm">
+            {isToday ? 'Nothing worked on yet today' : 'No Tasks'}
+          </p>
+          {!isToday ? <CyclingShortcutHints className="mt-1" /> : null}
         </div>
       </div>
     );
@@ -678,7 +739,7 @@ export function OutlineTree({
       : `${deleteCount} tasks`;
 
   return (
-    <>
+    <div className="flex min-h-0 flex-1 flex-col">
       <Dialog
         open={deleteConfirmOpen}
         onOpenChange={(open) => {
@@ -723,6 +784,7 @@ export function OutlineTree({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <ScrollArea className="min-h-0 flex-1">
       <div className="px-1 pb-1 pt-[4px]" role="tree">
       {visibleRows.map((row, index) => {
         const { point, hasChildren } = row;
@@ -772,6 +834,7 @@ export function OutlineTree({
         );
       })}
     </div>
-    </>
+      </ScrollArea>
+    </div>
   );
 }

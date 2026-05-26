@@ -1,4 +1,8 @@
 import {
+  childBlocksParentAutomation,
+  isApprovalFlagged,
+} from './approval-gate';
+import {
   extractPlanFromContent,
   parseCompletionFromAgent,
   parsePlanReviewJson,
@@ -118,6 +122,9 @@ export class HarnessOrchestrator {
     const point = this.store.getPoint(pointId);
     if (!point) return null;
 
+    const children = this.store.getChildren(pointId);
+    if (childBlocksParentAutomation(children)) return null;
+
     const guardKey = `${pointId}:${previousState}->${newState}`;
     const last = this.recentAutoRuns.get(guardKey);
     const now = Date.now();
@@ -201,6 +208,12 @@ export class HarnessOrchestrator {
       parent.state === 'waiting' &&
       (allChildrenTerminal(children) || allCancelled)
     ) {
+      if (childBlocksParentAutomation(children)) {
+        this.store.logHarnessEvent(parentId, 'parent-approval-blocked', {
+          flaggedChildIds: children.filter(isApprovalFlagged).map((c) => c.id),
+        });
+        return parent;
+      }
       const next = allCancelled
         ? 'todo'
         : parentStateAfterChildrenTerminal(parent);
@@ -413,6 +426,7 @@ export class HarnessOrchestrator {
     if (!parent) return;
     const children = this.store.getChildren(parentId);
     if (!allChildrenTerminal(children)) return;
+    if (childBlocksParentAutomation(children)) return;
 
     this.store.logHarnessEvent(parentId, 'completion-verification-requested', {
       childCount: children.length,

@@ -191,4 +191,109 @@ describe('HarnessOrchestrator', () => {
     expect(stateChanged).toBe('needs-review');
     expect(store.getPoint(point.id)?.sessionId).not.toBeNull();
   });
+
+  test('checkParentCompletion blocked while child requires approval', async () => {
+    const store = new OutlineStore('test-harness-approval-block');
+    const rpc = new MockSessionRpcAdapter();
+    await rpc.connect();
+    const harness = new HarnessOrchestrator(store, rpc);
+
+    const area = store.listAreas()[0];
+    const parent = store.createPoint({
+      task: 'Parent approval gate',
+      areaId: area.id,
+      state: 'waiting',
+      description: 'Plan exists here for review path',
+    });
+    store.createPoint({
+      task: 'Child shipped',
+      areaId: area.id,
+      parentId: parent.id,
+      state: 'shipped',
+    });
+    const flagged = store.createPoint({
+      task: 'Child flagged',
+      areaId: area.id,
+      parentId: parent.id,
+      state: 'shipped',
+    });
+    store.updatePoint(flagged.id, {
+      meta: { requiresApproval: true },
+    });
+
+    await harness.syncParentFromChildren(parent.id);
+    await harness.checkParentCompletion(parent.id);
+    expect(store.getPoint(parent.id)?.state).toBe('waiting');
+  });
+
+  test('checkParentCompletion proceeds after approval flag cleared', async () => {
+    const store = new OutlineStore('test-harness-approval-clear');
+    const rpc = new MockSessionRpcAdapter();
+    await rpc.connect();
+    const harness = new HarnessOrchestrator(store, rpc);
+
+    const area = store.listAreas()[0];
+    const parent = store.createPoint({
+      task: 'Parent after proceed',
+      areaId: area.id,
+      state: 'waiting',
+      description: 'Plan exists here for review path',
+    });
+    store.createPoint({
+      task: 'Child shipped',
+      areaId: area.id,
+      parentId: parent.id,
+      state: 'shipped',
+    });
+    const flagged = store.createPoint({
+      task: 'Child flagged',
+      areaId: area.id,
+      parentId: parent.id,
+      state: 'shipped',
+    });
+    store.updatePoint(flagged.id, {
+      meta: { requiresApproval: true },
+    });
+
+    await harness.checkParentCompletion(parent.id);
+    expect(store.getPoint(parent.id)?.state).toBe('waiting');
+
+    store.updatePoint(flagged.id, { meta: { requiresApproval: false } });
+    await harness.syncParentFromChildren(parent.id);
+    await harness.checkParentCompletion(parent.id);
+    expect(store.getPoint(parent.id)?.state).toBe('done');
+  });
+
+  test('parent does not unblock from waiting while child is approval-flagged', async () => {
+    const store = new OutlineStore('test-harness-approval-unblock');
+    const rpc = new MockSessionRpcAdapter();
+    await rpc.connect();
+    const harness = new HarnessOrchestrator(store, rpc);
+
+    const area = store.listAreas()[0];
+    const parent = store.createPoint({
+      task: 'Waiting parent',
+      areaId: area.id,
+      state: 'waiting',
+      description: 'Plan for parent path',
+    });
+    store.createPoint({
+      task: 'Done child',
+      areaId: area.id,
+      parentId: parent.id,
+      state: 'shipped',
+    });
+    const flagged = store.createPoint({
+      task: 'Flagged child',
+      areaId: area.id,
+      parentId: parent.id,
+      state: 'shipped',
+    });
+    store.updatePoint(flagged.id, {
+      meta: { requiresApproval: true },
+    });
+
+    const synced = await harness.syncParentFromChildren(parent.id);
+    expect(synced?.state).toBe('waiting');
+  });
 });

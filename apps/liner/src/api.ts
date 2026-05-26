@@ -5,6 +5,7 @@ import type {
   Point,
   ThreadMessage,
 } from '@liner/core';
+import { normalizePoint, normalizePoints } from './lib/point-fields';
 
 function resolveApiBase(): string {
   if (typeof window !== 'undefined' && window.liner?.apiBase) {
@@ -181,34 +182,43 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify(patch),
     }),
+  deleteArea: (id: string) =>
+    request<{ ok: boolean }>(`/areas/${id}`, { method: 'DELETE' }),
   listPoints: (areaId: string, parentId?: string | null) => {
     const params = new URLSearchParams({ areaId });
     if (parentId !== undefined) {
       params.set('parentId', parentId === null ? 'null' : parentId);
     }
-    return request<Point[]>(`/points?${params}`);
+    return request<Point[]>(`/points?${params}`).then(normalizePoints);
   },
   listTodayPoints: (since: string) => {
     const params = new URLSearchParams({ since });
-    return request<Point[]>(`/points/today?${params}`);
+    return request<Point[]>(`/points/today?${params}`).then(normalizePoints);
   },
   getPoint: (id: string) =>
-    request<{ point: Point; children: Point[] }>(`/points/${id}`),
+    request<{ point: Point; children: Point[] }>(`/points/${id}`).then(
+      ({ point, children }) => ({
+        point: normalizePoint(point),
+        children: normalizePoints(children),
+      }),
+    ),
   createPoint: (input: {
     task: string;
     areaId: string;
     parentId?: string | null;
     state?: Point['state'];
+    taskDescription?: string;
+    taskPhotos?: Point['taskPhotos'];
   }) =>
     request<Point>('/points', {
       method: 'POST',
       body: JSON.stringify(input),
-    }),
+    }).then(normalizePoint),
   updatePoint: (id: string, patch: Partial<Point>) =>
     request<Point>(`/points/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(patch),
-    }),
+    }).then(normalizePoint),
   reorderChildren: (parentId: string, childIds: string[]) =>
     request<Point>(`/points/${parentId}/reorder`, {
       method: 'PATCH',

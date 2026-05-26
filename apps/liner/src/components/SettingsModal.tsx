@@ -385,7 +385,15 @@ export function SettingsModal({
                           N
                         </kbd>
                       </td>
-                      <td>New child task (outline)</td>
+                      <td>New task (outline)</td>
+                    </tr>
+                    <tr>
+                      <td>
+                        <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-xs">
+                          F
+                        </kbd>
+                      </td>
+                      <td>Flag task (outline)</td>
                     </tr>
                     <tr>
                       <td>
@@ -402,26 +410,18 @@ export function SettingsModal({
                     <tr>
                       <td>
                         <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-xs">
-                          j
+                          ⌘
+                        </kbd>{' '}
+                        +{' '}
+                        <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-xs">
+                          ↑
                         </kbd>{' '}
                         /{' '}
                         <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-xs">
-                          k
+                          ↓
                         </kbd>
                       </td>
-                      <td>Navigate outline</td>
-                    </tr>
-                    <tr>
-                      <td>
-                        <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-xs">
-                          Delete
-                        </kbd>{' '}
-                        /{' '}
-                        <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-xs">
-                          ⌫
-                        </kbd>
-                      </td>
-                      <td>Delete selected task(s) (confirm)</td>
+                      <td>Reorder task (outline)</td>
                     </tr>
                     <tr>
                       <td>
@@ -437,7 +437,7 @@ export function SettingsModal({
                           ⌘⌫
                         </kbd>
                       </td>
-                      <td>Delete selected task(s) immediately</td>
+                      <td>Remove task (outline)</td>
                     </tr>
                     <tr>
                       <td>
