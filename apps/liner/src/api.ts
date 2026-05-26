@@ -82,7 +82,6 @@ export type ProviderConfigResponse = {
   modelLabel: string;
   workspaceSandbox: string;
   hasApiKey: boolean;
-  auth: Record<string, unknown>;
 };
 
 export type WorkspaceInfo = {
@@ -151,7 +150,7 @@ export const api = {
     }),
   getProviderConfig: () => request<ProviderConfigResponse>('/provider'),
   saveProviderConfig: (body: { apiKey?: string }) =>
-    request<{ ok: boolean; auth: Record<string, unknown> }>('/provider', {
+    request<{ ok: boolean; hasApiKey: boolean }>('/provider', {
       method: 'POST',
       body: JSON.stringify(body),
     }),

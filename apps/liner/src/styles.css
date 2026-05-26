@@ -334,15 +334,3 @@ body,
   font-family: var(--font-mono);
   color: var(--muted-foreground);
 }
-
-/* Interface Kit overlay: full-viewport host for shadow fixed positioning */
-#liner-interface-kit-host {
-  position: fixed;
-  inset: 0;
-  z-index: 2147483647;
-  pointer-events: none;
-}
-
-#liner-interface-kit-host > [data-interface-kit] {
-  pointer-events: auto;
-}

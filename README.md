@@ -196,12 +196,12 @@ CI builds without secrets use unsigned artifacts (see `.github/workflows/release
 
 Release notes: [CHANGELOG.md](CHANGELOG.md).
 
-## Manual steps (AI Engine)
+## Manual steps (Cursor SDK)
 
 1. **First run:** `bun install` at repo root.
 2. **Bundled build:** `bun run build:engine` then `bun run build:desktop:bundled`.
-3. **LLM credentials:** Settings → **AI Provider** (stored in `~/.liner/auth.json`).
-4. **Verify:** `bun run verify:engine` or Settings → **AI Engine** → **Verify Engine**.
+3. **LLM credentials:** Settings → **Cursor SDK** (stored in `~/.liner/auth.json`).
+4. **Verify:** `bun run verify:engine` or Settings → **Cursor SDK** → **Verify SDK**.
 
 ## Design
 

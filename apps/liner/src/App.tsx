@@ -461,16 +461,16 @@ export default function App() {
           <div className="rpc-banner" role="status">
             {packaged
               ? health!.engine?.state === 'failed'
-                ? 'AI engine failed — Settings → AI Engine'
+                ? 'Cursor SDK failed — Settings → Cursor SDK'
                 : health!.rpc === 'mock' || health!.engine?.state === 'mock-fallback'
-                  ? 'Demo mode — Settings → AI Engine'
-                  : 'AI engine not ready'
+                  ? 'Demo mode — Settings → Cursor SDK'
+                  : 'Cursor SDK not ready'
               : health!.rpc === 'mock'
                 ? 'Mock RPC — demo mode (add Cursor API key for live Composer 2.5 agents)'
                 : health!.engine?.state === 'failed' ||
                     health!.engine?.state === 'unavailable'
-                  ? 'AI engine failed — Settings → AI Engine'
-                  : 'AI engine unreachable'}
+                  ? 'Cursor SDK failed — Settings → Cursor SDK'
+                  : 'Cursor SDK unreachable'}
             {health!.lastError ? (
               <span className="rpc-banner-detail"> ({health!.lastError})</span>
             ) : null}

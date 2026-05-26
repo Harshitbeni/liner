@@ -4,6 +4,8 @@ Liner uses the [Cursor SDK](https://cursor.com/docs/sdk/typescript) (`@cursor/sd
 
 **One owner:** the **Liner API** (`liner-server`) connects to Cursor via `CursorSdkSessionRpcAdapter`. Electron is a launcher (window + API + optional Vite dev). Browser dev uses the same API path.
 
+**Local-only API:** `liner-server` binds to `127.0.0.1` and has no auth middleware. Do not expose port `9240` (or `LINER_API_PORT`) beyond localhost.
+
 ## Workspace sandboxes
 
 Each Liner workspace maps to a directory:

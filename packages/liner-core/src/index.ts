@@ -14,6 +14,7 @@ export * from './provider-auth';
 export * from './workspaces';
 export * from './engine-info';
 export * from './engine/index';
+export * from './runtime-status';
 
 import { DEFAULT_WORKSPACE_ID } from './paths';
 import { OutlineStore } from './store';

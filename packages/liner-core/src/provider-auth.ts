@@ -33,6 +33,9 @@ export function writeLinerAuth(next: LinerAuthFile): void {
 }
 
 export function getCursorApiKey(): string | null {
+  const fromEnv = process.env.CURSOR_API_KEY?.trim();
+  if (fromEnv) return fromEnv;
+
   const entry = readLinerAuth().cursor;
   if (entry?.type === 'api' && typeof entry.key === 'string' && entry.key.trim()) {
     return entry.key.trim();

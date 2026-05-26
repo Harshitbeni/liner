@@ -22,7 +22,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
-import { useInterfaceKitPrefs } from '../interface-kit-prefs';
+import { useInterfaceKit } from '../interface-kit';
 
 type Tab = 'general' | 'provider' | 'agents' | 'appearance' | 'shortcuts';
 type FetchStatus = 'idle' | 'loading' | 'ready' | 'error';
@@ -61,7 +61,7 @@ export function SettingsModal({
   const [fetchStatus, setFetchStatus] = React.useState<FetchStatus>('idle');
   const [fetchError, setFetchError] = React.useState<string | null>(null);
   const [agentsError, setAgentsError] = React.useState<string | null>(null);
-  const interfaceKit = useInterfaceKitPrefs();
+  const interfaceKit = useInterfaceKit();
 
   const formatLoadError = (e: unknown) => {
     if (e instanceof Error) {
@@ -154,7 +154,7 @@ export function SettingsModal({
         <DialogHeader className="border-b border-border px-5 py-4">
           <DialogTitle>Settings</DialogTitle>
         </DialogHeader>
-        <div className="flex min-h-0 flex-1">
+        <div className="flex min-h-0 min-w-0 flex-1">
           <nav className="flex w-36 shrink-0 flex-col gap-0.5 border-r border-border p-2">
             {TABS.map((t) => (
               <button
@@ -173,7 +173,7 @@ export function SettingsModal({
             ))}
           </nav>
           <ScrollArea className="min-h-[320px] flex-1">
-            <div className="space-y-4 p-5">
+            <div className="min-w-0 space-y-4 p-5">
               {tab === 'general' && fetchStatus !== 'ready' ? settingsTabMessage() : null}
 
               {tab === 'general' && fetchStatus === 'ready' && settings ? (
@@ -324,15 +324,15 @@ export function SettingsModal({
                         type="checkbox"
                         className="size-4 rounded border-input"
                         checked={interfaceKit.enabled}
-                        onChange={(e) =>
-                          interfaceKit.setEnabled(e.target.checked)
-                        }
+                        onChange={(e) => {
+                          interfaceKit.setInterfaceKitEnabled(e.target.checked);
+                        }}
                       />
                       Interface Kit (visual editor)
                     </label>
                     <p className="text-xs text-muted-foreground">
-                      Shows a paintbrush control to inspect and tweak UI styles
-                      in the app.
+                      Paintbrush control to inspect and tweak UI styles. Changes
+                      reload the app.
                     </p>
                   </div>
                   <Separator />

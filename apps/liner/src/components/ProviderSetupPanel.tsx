@@ -1,5 +1,5 @@
 import * as React from 'react';
-import type { HealthResponse } from '../api';
+import type { HealthResponse, ProviderConfigResponse } from '../api';
 import { api } from '../api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,6 +9,22 @@ type Props = {
   health: HealthResponse | null;
   onHealthRefresh?: () => void;
 };
+
+type ProviderPanelConfig = {
+  model: string;
+  modelLabel: string;
+  workspaceSandbox: string;
+  hasApiKey: boolean;
+};
+
+function mapProviderConfig(cfg: ProviderConfigResponse): ProviderPanelConfig {
+  return {
+    model: cfg.model,
+    modelLabel: cfg.modelLabel,
+    workspaceSandbox: cfg.workspaceSandbox,
+    hasApiKey: cfg.hasApiKey,
+  };
+}
 
 function engineLabel(health: HealthResponse | null): string {
   const eng = health?.engine;
@@ -37,12 +53,7 @@ function engineStateLabel(state: string | undefined): string {
 }
 
 export function ProviderSetupPanel({ health, onHealthRefresh }: Props) {
-  const [config, setConfig] = React.useState<{
-    model: string;
-    modelLabel: string;
-    workspaceSandbox: string;
-    hasApiKey: boolean;
-  } | null>(null);
+  const [config, setConfig] = React.useState<ProviderPanelConfig | null>(null);
   const [apiKey, setApiKey] = React.useState('');
   const [saveBusy, setSaveBusy] = React.useState(false);
   const [verifyBusy, setVerifyBusy] = React.useState(false);
@@ -52,17 +63,26 @@ export function ProviderSetupPanel({ health, onHealthRefresh }: Props) {
     ok: boolean;
   } | null>(null);
   const [saved, setSaved] = React.useState(false);
+  const [loading, setLoading] = React.useState(true);
+  const [loadError, setLoadError] = React.useState<string | null>(null);
+
+  const loadConfig = React.useCallback(() => {
+    setLoading(true);
+    setLoadError(null);
+    return api
+      .getProviderConfig()
+      .then((cfg) => {
+        setConfig(mapProviderConfig(cfg));
+      })
+      .catch((e) => {
+        setLoadError(e instanceof Error ? e.message : String(e));
+      })
+      .finally(() => setLoading(false));
+  }, []);
 
   React.useEffect(() => {
-    api.getProviderConfig().then((cfg) => {
-      setConfig({
-        model: cfg.model,
-        modelLabel: cfg.modelLabel,
-        workspaceSandbox: cfg.workspaceSandbox,
-        hasApiKey: cfg.hasApiKey,
-      });
-    });
-  }, []);
+    void loadConfig();
+  }, [loadConfig]);
 
   const saveKey = async () => {
     setSaveBusy(true);
@@ -72,12 +92,7 @@ export function ProviderSetupPanel({ health, onHealthRefresh }: Props) {
       setApiKey('');
       setSaved(true);
       const cfg = await api.getProviderConfig();
-      setConfig({
-        model: cfg.model,
-        modelLabel: cfg.modelLabel,
-        workspaceSandbox: cfg.workspaceSandbox,
-        hasApiKey: cfg.hasApiKey,
-      });
+      setConfig(mapProviderConfig(cfg));
       onHealthRefresh?.();
     } finally {
       setSaveBusy(false);
@@ -112,8 +127,27 @@ export function ProviderSetupPanel({ health, onHealthRefresh }: Props) {
 
   const reachable = health?.engineReachable ?? config?.hasApiKey ?? false;
 
+  if (loading && !config) {
+    return (
+      <p className="text-sm text-muted-foreground">Loading Cursor SDK settings…</p>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="space-y-3">
+        <p className="text-sm text-destructive">
+          Could not load provider settings: {loadError}
+        </p>
+        <Button type="button" variant="secondary" onClick={() => void loadConfig()}>
+          Retry
+        </Button>
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-4">
+    <div className="min-w-0 space-y-4">
       <p className="text-sm text-muted-foreground">
         Liner runs agents through the local <strong>Cursor SDK</strong> with a
         fixed model (<strong>Composer 2.5</strong>). Your API key is stored in{' '}
