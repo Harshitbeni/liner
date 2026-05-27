@@ -22,7 +22,7 @@ const STATE_ICONS: Record<PointState, ComponentType<CentralIconBaseProps>> = {
   cancelled: IconCircleX,
 };
 
-const STATE_ICON_COLORS: Record<PointState, string> = {
+export const STATE_ICON_COLORS: Record<PointState, string> = {
   backlog: 'text-neutral-400',
   todo: 'text-muted-foreground',
   'needs-review': 'text-yellow-600',

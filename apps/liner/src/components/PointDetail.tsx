@@ -6,6 +6,7 @@ import type {
   TaskPhoto,
   ThreadMessage,
 } from '@liner/core';
+import { POINT_STATES } from '@/lib/point-states';
 import { IconEyeOpen } from '@central-icons-react/round-filled-radius-3-stroke-1/IconEyeOpen';
 import { IconLoader } from '@central-icons-react/round-filled-radius-3-stroke-1/IconLoader';
 import { api, subscribePointEvents } from '../api';
@@ -28,17 +29,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-
-const STATES: PointState[] = [
-  'backlog',
-  'todo',
-  'needs-review',
-  'in-progress',
-  'waiting',
-  'done',
-  'shipped',
-  'cancelled',
-];
 
 type Props = {
   pointId: string;
@@ -365,7 +355,7 @@ export function PointDetail({
               </SelectValue>
             </SelectTrigger>
             <SelectContent>
-              {STATES.map((s) => (
+              {POINT_STATES.map((s) => (
                 <SelectItem key={s} value={s} className="text-13 capitalize">
                   <span className="flex items-center gap-1.5">
                     <StateIcon state={s} />

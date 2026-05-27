@@ -3,6 +3,7 @@ import type { Point } from '@liner/core';
 import { api } from '../api';
 import { toggledApprovalFlagMeta } from '../lib/approval-gate';
 import { CyclingShortcutHints } from './CyclingShortcutHints';
+import { BulkActionBar } from './outline-tree/BulkActionBar';
 import { OutlineTreeRow } from './outline-tree/OutlineTreeRow';
 import {
   applyRemovedPointsToTree,
@@ -22,6 +23,7 @@ import {
   topLevelDeleteIds,
   type VisibleRow,
 } from './outline-tree/model';
+import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
@@ -48,7 +50,7 @@ export function OutlineTree({
   areaId,
   selectedId,
   onSelect,
-  refreshKey: _refreshKey,
+  refreshKey,
   runningPointIds,
   onPointsChanged,
   mode = 'area',
@@ -103,9 +105,26 @@ export function OutlineTree({
       });
       return;
     }
-    api.listPoints(areaId, null).then((list) => {
+    void (async () => {
+      const list = await api.listPoints(areaId, null);
       setRoots(list);
-    });
+      setChildrenMap((prev) => {
+        const parentIds = Object.keys(prev);
+        if (parentIds.length === 0) return prev;
+        void Promise.all(
+          parentIds.map(async (parentId) => {
+            const kids = await api.listPoints(areaId, parentId);
+            return [parentId, kids] as const;
+          }),
+        ).then((entries) => {
+          setChildrenMap((current) => ({
+            ...current,
+            ...Object.fromEntries(entries),
+          }));
+        });
+        return prev;
+      });
+    })();
   }, [areaId, isToday, since]);
 
   React.useEffect(() => {
@@ -117,6 +136,11 @@ export function OutlineTree({
   React.useEffect(() => {
     reloadRoots();
   }, [areaId, reloadRoots]);
+
+  React.useEffect(() => {
+    if (refreshKey === 0) return;
+    reloadRoots();
+  }, [refreshKey, reloadRoots]);
 
   const loadChildren = async (parentId: string) => {
     if (isToday) return;
@@ -310,6 +334,15 @@ export function OutlineTree({
 
   const multiSelect = selectedIds.size > 1;
 
+  const selectedPoints = React.useMemo(() => {
+    const points: Point[] = [];
+    for (const id of selectedIds) {
+      const point = findPoint(id, roots, childrenMap);
+      if (point) points.push(point);
+    }
+    return points;
+  }, [selectedIds, roots, childrenMap]);
+
   const multiSelectRadiusRoles = React.useMemo(
     () => buildMultiSelectRadiusRoles(visibleRows, selectedIds),
     [visibleRows, selectedIds],
@@ -482,6 +515,8 @@ export function OutlineTree({
     }
     setSelectedIds((prev) => {
       if (prev.size === 1 && prev.has(selectedId)) return prev;
+      // Keep multi-select intact when rows refresh (e.g. bulk status/flag update).
+      if (prev.size > 1 && prev.has(selectedId)) return prev;
       return new Set([selectedId]);
     });
   }, [selectedId, visibleRows]);
@@ -739,7 +774,7 @@ export function OutlineTree({
       : `${deleteCount} tasks`;
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="relative flex min-h-0 flex-1 flex-col">
       <Dialog
         open={deleteConfirmOpen}
         onOpenChange={(open) => {
@@ -785,7 +820,10 @@ export function OutlineTree({
         </DialogContent>
       </Dialog>
       <ScrollArea className="min-h-0 flex-1">
-      <div className="px-1 pb-1 pt-[4px]" role="tree">
+      <div
+        className={cn('px-1 pt-[4px]', multiSelect ? 'pb-16' : 'pb-1')}
+        role="tree"
+      >
       {visibleRows.map((row, index) => {
         const { point, hasChildren } = row;
         const isInSelection = selectedIds.has(point.id);
@@ -835,6 +873,18 @@ export function OutlineTree({
       })}
     </div>
       </ScrollArea>
+      {multiSelect && selectedPoints.length > 0 ? (
+        <div className="pointer-events-none absolute inset-x-0 bottom-4 z-20 flex justify-center">
+          <BulkActionBar
+            className="pointer-events-auto"
+            points={selectedPoints}
+            isToday={isToday}
+            onReloadRoots={reloadRoots}
+            onReloadParent={loadChildren}
+            onPointsChanged={onPointsChanged}
+          />
+        </div>
+      ) : null}
     </div>
   );
 }
