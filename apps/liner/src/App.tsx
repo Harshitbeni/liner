@@ -411,19 +411,17 @@ export default function App() {
       <div
         key={a.id}
         className={cn(
-          'group mb-px flex w-full items-center gap-0.5',
+          'group mb-px flex w-full items-center gap-0.5 py-1.5 pr-2 transition-colors',
           todayRow ? 'pl-[8px]' : 'pl-[6px]',
+          todayRow || options?.indent ? 'rounded-[6px]' : 'rounded-full',
+          selectedAreaId === a.id
+            ? 'bg-accent text-foreground'
+            : 'text-muted-foreground hover:bg-accent hover:text-foreground',
         )}
       >
         <button
           type="button"
-          className={cn(
-            'flex min-w-0 flex-1 cursor-pointer items-center gap-2 py-1.5 pr-2 text-left text-13 transition-colors',
-            todayRow || options?.indent ? 'rounded-[6px]' : 'rounded-full',
-            selectedAreaId === a.id
-              ? 'bg-accent text-foreground'
-              : 'text-muted-foreground hover:bg-accent hover:text-foreground',
-          )}
+          className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 border-0 bg-transparent p-0 text-left text-13 text-inherit outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
           onClick={() => void selectArea(a.id)}
         >
           <AreaProgressIcon
@@ -437,12 +435,12 @@ export default function App() {
             }
           />
           {options?.readonly ? (
-            <span className="flex-1 truncate">{a.name}</span>
+            <span className="min-w-0 flex-1 truncate">{a.name}</span>
           ) : (
             <InlineRename
               value={a.name}
               aria-label={`Rename area ${a.name}`}
-              className="flex-1"
+              className="min-w-0 flex-1"
               onSave={async (name) => {
                 await api.updateArea(a.id, { name });
                 setAreas(await api.listAreas());
@@ -457,7 +455,7 @@ export default function App() {
                 type="button"
                 variant="ghost"
                 size="icon-xs"
-                className="mr-1 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-foreground"
+                className="shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-foreground"
                 aria-label="Delete Area"
                 onClick={(e) => {
                   e.stopPropagation();
@@ -538,7 +536,7 @@ export default function App() {
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
             {pendingDeleteArea
-              ? `“${pendingDeleteArea.name}” and all tasks in it will be removed permanently.`
+              ? `${pendingDeleteArea.name} and all tasks in it will be removed permanently.`
               : 'This area and all tasks in it will be removed permanently.'}
           </p>
           <DialogFooter>

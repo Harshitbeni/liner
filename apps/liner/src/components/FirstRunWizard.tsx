@@ -44,9 +44,7 @@ export function FirstRunWizard({
     <Dialog open={open} onOpenChange={(next) => !next && onDismiss()}>
       <DialogContent className="max-h-[min(90vh,640px)] overflow-y-auto sm:max-w-md">
         <DialogHeader>
-          <DialogTitle className="text-16 leading-none font-semibold">
-            Welcome to Liner
-          </DialogTitle>
+          <DialogTitle>Welcome to Liner</DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
           <div className="space-y-2">

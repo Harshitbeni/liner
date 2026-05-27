@@ -39,9 +39,7 @@ export function TaskCreator({ areaId, parentId, onCreated, onClose }: Props) {
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-h-[min(90vh,640px)] overflow-y-auto sm:max-w-md">
         <DialogHeader>
-          <DialogTitle className="text-16 leading-none font-semibold">
-            New Task
-          </DialogTitle>
+          <DialogTitle>New Task</DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
           <div className="space-y-2">

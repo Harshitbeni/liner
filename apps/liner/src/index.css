@@ -17,8 +17,8 @@
   --muted-foreground: theme(colors.neutral.500);
   --accent: theme(colors.neutral.100);
   --accent-foreground: theme(colors.neutral.950);
-  --destructive: theme(colors.neutral.600);
-  --destructive-foreground: theme(colors.neutral.50);
+  --destructive: theme(colors.red.600);
+  --destructive-foreground: theme(colors.white);
   --border: theme(colors.neutral.200);
   --input: theme(colors.neutral.200);
   --ring: theme(colors.neutral.400);
@@ -44,8 +44,8 @@
   --muted-foreground: theme(colors.neutral.400);
   --accent: theme(colors.neutral.800);
   --accent-foreground: theme(colors.neutral.50);
-  --destructive: theme(colors.neutral.400);
-  --destructive-foreground: theme(colors.neutral.950);
+  --destructive: theme(colors.red.500);
+  --destructive-foreground: theme(colors.white);
   --border: theme(colors.neutral.800);
   --input: theme(colors.neutral.800);
   --ring: theme(colors.neutral.600);
